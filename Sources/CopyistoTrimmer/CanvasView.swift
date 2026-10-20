@@ -143,6 +143,11 @@ struct CanvasView: View {
                 .resizable()
                 .interpolation(.high)
                 .frame(width: frame.width, height: frame.height)
+                // Turned inside the page's own frame, with white corners, exactly as the export renders it.
+                .rotationEffect(.degrees(store.rotation(of: image)))
+                .frame(width: frame.width, height: frame.height)
+                .background(.white)
+                .clipped()
                 .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
                 .offset(x: frame.minX, y: frame.minY)
             Canvas { context, _ in draw(in: &context, mapping: mapping) }

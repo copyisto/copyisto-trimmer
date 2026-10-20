@@ -5,7 +5,8 @@ import Foundation
 /// Coordinates are in pixels of the original image, like labelme, so they never depend on the window size.
 struct TrimsFile: Codable, Equatable {
     static let fileName = "copyisto-trims.json"
-    static let currentVersion = 1
+    // 2 added `rotation`; version 1 apps refuse it instead of dropping the rotation on their next save.
+    static let currentVersion = 2
 
     var version = currentVersion
     var images: [String: ImageTrims] = [:]
@@ -44,6 +45,9 @@ struct ImageTrims: Codable, Equatable {
     var height: Int
     /// In drawing order; a box's position, not its id, is its number on screen and in the crop's file name.
     var boxes: [Box] = []
+    /// Degrees clockwise that the page is turned about its centre before the boxes apply; nil is level.
+    /// Boxes are in pixels of the turned page, which keeps the original's size, with white in the uncovered corners.
+    var rotation: Double?
 
     init(size: CGSize) {
         width = Int(size.width)

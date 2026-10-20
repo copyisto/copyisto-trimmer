@@ -22,10 +22,12 @@ Requires macOS 26, on Apple silicon or Intel.
 ## Use
 
 1. Open a folder of scans (⌘O) or drop it onto the window.
-2. Drag on a page to draw a box; drag a box to move it, or its handles to resize it.
-3. Press **Eksportuj** (⌘E).
+2. If a page is tilted, press **Wyprostuj automatycznie** (⌘L), or turn it by 0.1° with `[` and `]`.
+3. Drag on a page to draw a box; drag a box to move it, or its handles to resize it.
+4. Press **Eksportuj** (⌘E).
 
 Crops land in `copyisto-trims/` next to the scans, named `<page>_001.png`, `<page>_002.png`, …, at the scan's full resolution.
+Crops of a turned page are cut from the turned page, so the staff lines in them come out level.
 Boxes are saved as you go in `copyisto-trims.json`, so you can close the app and carry on later.
 Every action is a toolbar button, with its shortcut in the tooltip.
 
@@ -67,16 +69,19 @@ Signing needs these repository secrets; without them the build is ad hoc signed 
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "images": {
     "4H8-E_001.png": {
       "width": 4960, "height": 7016,
+      "rotation": -0.46,
       "boxes": [{ "id": 1, "x": 120, "y": 840, "width": 4700, "height": 1300 }]
     }
   }
 }
 ```
 
+`rotation` is in degrees clockwise about the page centre, and the boxes are in pixels of the turned page, which keeps the original size and has white in the uncovered corners.
+Straightening finds the angle by projection profile, the deskew method of Leptonica and Tesseract: turned level, the staff lines fall into the fewest rows.
 Boxes are numbered in the order they were drawn, and deleting one renumbers the rest, so label crops only once a page's boxes are final.
 Each export rewrites the crops and removes its own crops whose box is gone; other files in `copyisto-trims/` are left alone.
 The app has no dependencies beyond the macOS SDK and makes no network requests.

@@ -142,6 +142,55 @@ final class Store {
         }
     }
 
+    // MARK: Rotation
+
+    /// A press of the rotate buttons; fine enough to level a staff line across the whole page.
+    static let rotationStep = 0.1
+
+    func rotation(of image: String) -> Double {
+        trims.images[image]?.rotation ?? 0
+    }
+
+    /// Turns the page and carries its boxes along, so each still frames what it was drawn around.
+    func setRotation(_ degrees: Double, on image: String, imageSize: CGSize) {
+        let degrees = min(max((degrees * 100).rounded() / 100, -Straighten.maxAngle), Straighten.maxAngle)
+        change(image, imageSize: imageSize) { trims in
+            let delta = degrees - (trims.rotation ?? 0)
+            trims.rotation = degrees == 0 ? nil : degrees
+            trims.boxes = trims.boxes.map { box in
+                let rect = box.rect
+                let centre = rotated(CGPoint(x: rect.midX, y: rect.midY), by: delta, in: imageSize)
+                let shifted = CGSize(width: centre.x - rect.midX, height: centre.y - rect.midY)
+                return Box(id: box.id, rect: moved(rect, by: shifted, within: imageSize))
+            }
+        }
+    }
+
+    /// `to` gets the current angle; the page size comes from its preview, which is cached by the time anyone presses a key.
+    func rotateCurrent(to angle: @escaping (Double) -> Double) {
+        guard let current, let url = url(for: current) else { return }
+        Task {
+            guard let preview = await previews.preview(for: url) else { return }
+            setRotation(angle(rotation(of: current)), on: current, imageSize: preview.pixelSize)
+        }
+    }
+
+    func rotateCurrent(by delta: Double) { rotateCurrent { $0 + delta } }
+    func resetRotation() { rotateCurrent { _ in 0 } }
+
+    private(set) var isStraightening = false
+
+    /// Levels the current page by its staff lines; runs on the preview, so it takes a fraction of a second.
+    func straightenCurrent() async {
+        guard let current, let url = url(for: current), !isStraightening else { return }
+        isStraightening = true
+        defer { isStraightening = false }
+        guard let preview = await previews.preview(for: url) else { return }
+        let image = preview.image
+        let angle = await Task.detached(priority: .userInitiated) { Straighten.angle(of: image) }.value
+        setRotation(angle, on: current, imageSize: preview.pixelSize)
+    }
+
     func deleteSelected() {
         guard let current, let id = selectedBox else { return }
         deleteBox(id, on: current)
@@ -159,7 +208,7 @@ final class Store {
         // Editing a page confirms its current size.
         if let imageSize { after.width = Int(imageSize.width); after.height = Int(imageSize.height) }
         edit(&after)
-        guard after.boxes != before.boxes else { return }
+        guard after != before else { return }
         undoStack.append(Snapshot(image: image, trims: before))
         redoStack.removeAll()
         trims.images[image] = after

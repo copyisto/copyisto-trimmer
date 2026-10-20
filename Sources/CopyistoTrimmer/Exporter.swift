@@ -13,6 +13,7 @@ struct ExportJob: Sendable {
     let source: URL
     let image: String
     let boxes: [Box]
+    var rotation = 0.0
 }
 
 struct ExportSummary: Equatable, Sendable {
@@ -49,8 +50,9 @@ enum Exporter {
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
 
         let jobs = images.compactMap { image -> ExportJob? in
-            guard let boxes = trims[image]?.boxes, !boxes.isEmpty else { return nil }
-            return ExportJob(source: folder.appending(path: image), image: image, boxes: boxes)
+            guard let page = trims[image], !page.boxes.isEmpty else { return nil }
+            return ExportJob(
+                source: folder.appending(path: image), image: image, boxes: page.boxes, rotation: page.rotation ?? 0)
         }
 
         var written = Set<String>()
@@ -102,7 +104,11 @@ enum Exporter {
         for (index, box) in job.boxes.enumerated() {
             // A box can fall outside a page that was re-scanned at a smaller size; skip it rather than crop garbage.
             let rect = clamped(box.rect, to: size)
-            guard isUsable(rect), let crop = image.cropping(to: rect) else { continue }
+            guard isUsable(rect) else { continue }
+            // A level page is cropped as is, so its crops keep the scan's exact pixels.
+            guard let crop = job.rotation == 0
+                ? image.cropping(to: rect) : renderRotated(image, degrees: job.rotation, crop: rect)
+            else { throw ExportError.unwritable(cropFileName(image: job.image, number: index + 1, format: format)) }
             let name = cropFileName(image: job.image, number: index + 1, format: format)
             let destination = output.appending(path: name)
             // Written beside the target and renamed over it, so an interrupted export never leaves a half-written crop.

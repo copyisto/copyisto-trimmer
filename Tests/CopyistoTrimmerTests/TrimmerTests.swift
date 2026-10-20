@@ -83,6 +83,7 @@ import Testing
     var file = TrimsFile()
     var page = ImageTrims(size: CGSize(width: 4960, height: 7016))
     page.add(CGRect(x: 120, y: 840, width: 4700, height: 1300))
+    page.rotation = -0.46
     file.images["4H8-E_001.png"] = page
     file.images["empty.png"] = ImageTrims(size: CGSize(width: 10, height: 10))
     try file.save(to: folder)
@@ -92,8 +93,56 @@ import Testing
 
 @Test func newerTrimsFilesAreRefused() throws {
     let folder = try temporaryFolder()
-    try Data(#"{"version": 2, "images": {}}"#.utf8).write(to: folder.appending(path: TrimsFile.fileName))
+    try Data(#"{"version": \#(TrimsFile.currentVersion + 1), "images": {}}"#.utf8)
+        .write(to: folder.appending(path: TrimsFile.fileName))
     #expect(throws: TrimsError.self) { try TrimsFile.load(from: folder) }
+}
+
+@Test func version1FilesStillLoad() throws {
+    let folder = try temporaryFolder()
+    let json = #"{"version": 1, "images": {"a.png": {"width": 10, "height": 20, "nextId": 3, "boxes": []}}}"#
+    try Data(json.utf8).write(to: folder.appending(path: TrimsFile.fileName))
+    let page = try #require(try TrimsFile.load(from: folder).images["a.png"])
+    #expect(page.size == CGSize(width: 10, height: 20) && page.rotation == nil)
+}
+
+@Test func positiveRotationTurnsClockwise() {
+    let size = CGSize(width: 200, height: 200)
+    // The middle of the right edge goes to the middle of the bottom edge.
+    let point = rotated(CGPoint(x: 200, y: 100), by: 90, in: size)
+    #expect(abs(point.x - 100) < 1e-9 && abs(point.y - 200) < 1e-9)
+}
+
+@Test func exportRendersRotatedPagesAsTheCanvasShowsThem() async throws {
+    let folder = try temporaryFolder()
+    // Top left quarter red, the rest blue; turned 90° clockwise, the red quarter is top right.
+    try writePNG(width: 100, height: 100, to: folder.appending(path: "page.png")) { x, y in
+        x < 50 && y < 50 ? (255, 0, 0) : (0, 0, 255)
+    }
+    var page = ImageTrims(size: CGSize(width: 100, height: 100))
+    page.add(CGRect(x: 55, y: 5, width: 40, height: 40))
+    page.add(CGRect(x: 5, y: 5, width: 40, height: 40))
+    page.rotation = 90
+    _ = try await Exporter.run(folder: folder, images: ["page.png"], trims: ["page.png": page], format: .png) { _, _ in }
+
+    let output = folder.appending(path: Exporter.folderName)
+    let red = try #require(loadImage(output.appending(path: "page_001.png")))
+    let blue = try #require(loadImage(output.appending(path: "page_002.png")))
+    #expect(red.width == 40 && red.height == 40)
+    #expect(try rgb(of: red, x: 0, y: 0) == [255, 0, 0] && rgb(of: red, x: 39, y: 39) == [255, 0, 0])
+    #expect(try rgb(of: blue, x: 0, y: 0) == [0, 0, 255] && rgb(of: blue, x: 39, y: 39) == [0, 0, 255])
+}
+
+@Test func straightenUndoesTheTiltOfAPage() throws {
+    // Staves of five lines, like a manuscript notebook, then tilted the way the export turns pages.
+    let level = try makeImage(width: 800, height: 1100) { _, y in
+        (y % 150) < 50 && y % 10 == 0 ? (90, 140, 220) : (250, 248, 240)
+    }
+    #expect(abs(Straighten.angle(of: level)) <= 0.02)
+    for tilt in [0.5, -1.3] {
+        let tilted = try #require(renderRotated(level, degrees: tilt, crop: CGRect(x: 0, y: 0, width: 800, height: 1100)))
+        #expect(abs(Straighten.angle(of: tilted) + tilt) <= 0.05)
+    }
 }
 
 @Test func exportCropsExactPixelsAndRemovesStaleCrops() async throws {
@@ -137,6 +186,17 @@ private func temporaryFolder() throws -> URL {
 }
 
 private func writePNG(width: Int, height: Int, to url: URL, color: (Int, Int) -> (UInt8, UInt8, UInt8)) throws {
+    let image = try makeImage(width: width, height: height, color: color)
+    let destination = try #require(CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil))
+    CGImageDestinationAddImage(destination, image, nil)
+    #expect(CGImageDestinationFinalize(destination))
+}
+
+private func loadImage(_ url: URL) -> CGImage? {
+    CGImageSourceCreateWithURL(url as CFURL, nil).flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) }
+}
+
+private func makeImage(width: Int, height: Int, color: (Int, Int) -> (UInt8, UInt8, UInt8)) throws -> CGImage {
     var pixels = [UInt8](repeating: 255, count: width * height * 4)
     for y in 0..<height {
         for x in 0..<width {
@@ -149,10 +209,7 @@ private func writePNG(width: Int, height: Int, to url: URL, color: (Int, Int) ->
         CGContext(
             data: &pixels, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
             space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
-    let image = try #require(context.makeImage())
-    let destination = try #require(CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil))
-    CGImageDestinationAddImage(destination, image, nil)
-    #expect(CGImageDestinationFinalize(destination))
+    return try #require(context.makeImage())
 }
 
 private func rgb(of image: CGImage, x: Int, y: Int) throws -> [UInt8] {

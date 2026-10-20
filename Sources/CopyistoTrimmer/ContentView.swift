@@ -131,6 +131,26 @@ struct ContentView: View {
             }
         }
         ToolbarItem {
+            let angle = store.current.map(store.rotation(of:)) ?? 0
+            ControlGroup {
+                Button("Obróć w lewo", systemImage: "rotate.left") { store.rotateCurrent(by: -Store.rotationStep) }
+                    .help("Obróć zdjęcie o 0,1° w lewo ([)")
+                Button { store.resetRotation() } label: {
+                    Text(angleLabel(angle))
+                        .font(Theme.text(12).monospacedDigit())
+                        .frame(minWidth: 44)
+                }
+                .disabled(angle == 0)
+                .help("Bez obrotu")
+                Button("Obróć w prawo", systemImage: "rotate.right") { store.rotateCurrent(by: Store.rotationStep) }
+                    .help("Obróć zdjęcie o 0,1° w prawo (])")
+                Button("Wyprostuj automatycznie", systemImage: "level") { Task { await store.straightenCurrent() } }
+                    .disabled(store.isStraightening)
+                    .help("Wyprostuj automatycznie według pięciolinii (⌘L)")
+            }
+            .disabled(store.current == nil)
+        }
+        ToolbarItem {
             Picker("Format eksportu", selection: $store.format) {
                 ForEach(ExportFormat.allCases, id: \.self) { Text($0.label).tag($0) }
             }
@@ -159,6 +179,11 @@ struct ContentView: View {
             }
         }
     }
+}
+
+/// 0,46° with a Polish decimal comma; up to two decimals, as rotations are stored.
+func angleLabel(_ value: Double) -> String {
+    value.formatted(.number.precision(.fractionLength(0...2)).locale(Locale(identifier: "pl_PL"))) + "°"
 }
 
 /// Its own view, so it observes the box count itself: an inline List row is not redrawn

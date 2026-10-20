@@ -64,6 +64,18 @@ struct AppCommands: Commands {
                 .keyboardShortcut(.rightArrow, modifiers: [])
                 .disabled(!store.canStep(1))
             Divider()
+            Button("Obróć w lewo o 0,1°") { store.rotateCurrent(by: -Store.rotationStep) }
+                .keyboardShortcut("[", modifiers: [])
+                .disabled(store.current == nil)
+            Button("Obróć w prawo o 0,1°") { store.rotateCurrent(by: Store.rotationStep) }
+                .keyboardShortcut("]", modifiers: [])
+                .disabled(store.current == nil)
+            Button("Wyprostuj automatycznie") { Task { await store.straightenCurrent() } }
+                .keyboardShortcut("l")
+                .disabled(store.current == nil || store.isStraightening)
+            Button("Bez obrotu") { store.resetRotation() }
+                .disabled(store.current.map(store.rotation(of:)) ?? 0 == 0)
+            Divider()
             Button("Usuń zaznaczony box") { store.deleteSelected() }
                 .keyboardShortcut(.delete, modifiers: [])
                 .disabled(store.selectedBox == nil)

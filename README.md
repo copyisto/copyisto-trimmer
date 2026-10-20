@@ -17,7 +17,7 @@ It is built for the [Copyisto](https://copyisto.com) dataset of handwritten harm
 1. Download [Copyisto-Trimmer.zip](https://github.com/copyisto/copyisto-trimmer/releases/latest/download/Copyisto-Trimmer.zip) from the latest release.
 2. Unzip it and drag **Copyisto Trimmer** into Applications.
 
-Requires macOS 26 on Apple silicon.
+Requires macOS 26, on Apple silicon or Intel.
 
 ## Use
 

@@ -12,7 +12,8 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-26
+    # The arm64 macOS runners keep timing out for lack of capacity; the bundle is universal, so Intel builds it just as well.
+    runs-on: macos-26-intel
     env:
       # Signing and notarisation run only when these secrets exist, so forks and pull requests still build (ad hoc).
       MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}

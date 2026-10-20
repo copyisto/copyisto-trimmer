@@ -9,8 +9,10 @@ version="${VERSION:-0.0.0-dev}"
 identity="${SIGN_IDENTITY:--}"
 cd "$(dirname "$0")/.."
 
-swift build -c release
-bin="$(swift build -c release --show-bin-path)/CopyistoTrimmer"
+# Universal, so one download runs on Apple silicon and on Intel Macs, whichever machine built it.
+build=(swift build -c release --arch arm64 --arch x86_64)
+"${build[@]}"
+bin="$("${build[@]}" --show-bin-path)/CopyistoTrimmer"
 
 app="build/Copyisto Trimmer.app"
 rm -rf "$app"

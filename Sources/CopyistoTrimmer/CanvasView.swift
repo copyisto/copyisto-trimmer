@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// One page with its boxes. Drag on empty paper to draw a box, drag a box to move it, drag a handle to resize it.
@@ -14,6 +15,11 @@ struct CanvasView: View {
     @State private var scroll = ScrollPosition()
     @State private var visible = CGRect.zero
     @State private var pinch: (startZoom: CGFloat, anchor: ZoomAnchor)?
+    /// Where the pointer is over the canvas, in window-sized coordinates that stay valid while the page scrolls under it.
+    @State private var pointerOnScreen: CGPoint?
+    /// Set by ⌘-scroll, so the zoom keeps the point under the pointer in place instead of the middle.
+    @State private var zoomAtPointer = false
+    @State private var wheelMonitor: Any?
 
     private static let padding: CGFloat = 24
     private static let handleSize: CGFloat = 8
@@ -77,6 +83,28 @@ struct CanvasView: View {
                 store.error = "Nie udało się odczytać zdjęcia „\(image)”."
             }
         }
+        // ⌘-scroll zooms, as in Preview and browsers; the event is swallowed so the page does not scroll too.
+        .onAppear {
+            wheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+                guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+                    event.scrollingDeltaY != 0
+                else { return event }
+                // A trackpad sends many small precise deltas, a mouse wheel a few whole lines.
+                let factor = exp(event.scrollingDeltaY * (event.hasPreciseScrollingDeltas ? 0.01 : 0.1))
+                let handled = MainActor.assumeIsolated {
+                    guard pointerOnScreen != nil else { return false }
+                    let old = store.zoom
+                    store.setZoom(old * factor)
+                    zoomAtPointer = store.zoom != old
+                    return true
+                }
+                return handled ? nil : event
+            }
+        }
+        .onDisappear {
+            if let wheelMonitor { NSEvent.removeMonitor(wheelMonitor) }
+            wheelMonitor = nil
+        }
         // The downsampled preview goes soft when zoomed in, so the full scan is decoded for the current page only.
         .task(id: store.zoom > 1 ? url : nil) {
             guard store.zoom > 1 else { full = nil; return }
@@ -126,7 +154,11 @@ struct CanvasView: View {
         .onChange(of: store.zoom) { old, new in
             let before = layout(size, viewport: viewport, zoom: old).mapping
             let after = layout(size, viewport: viewport, zoom: new).mapping
-            let anchor = pinch?.anchor ?? ZoomAnchor(
+            let screen = zoomAtPointer ? pointerOnScreen : nil
+            zoomAtPointer = false
+            let anchor = pinch?.anchor ?? screen.map {
+                ZoomAnchor(image: before.toImage(CGPoint(x: visible.minX + $0.x, y: visible.minY + $0.y)), screen: $0)
+            } ?? ZoomAnchor(
                 image: before.toImage(CGPoint(x: visible.midX, y: visible.midY)),
                 screen: CGPoint(x: visible.width / 2, y: visible.height / 2))
             let target = after.toView(anchor.image)
@@ -157,6 +189,7 @@ struct CanvasView: View {
         .gesture(dragGesture(mapping: mapping, size: size))
         .onContinuousHover { phase in
             if case .active(let location) = phase {
+                pointerOnScreen = CGPoint(x: location.x - visible.minX, y: location.y - visible.minY)
                 pointer = pointerStyle(at: location, mapping: mapping, size: size)
                 hoveredBox = switch hit(at: location, mapping: mapping) {
                 case .handle(let box, _), .box(let box): box.id
@@ -165,6 +198,7 @@ struct CanvasView: View {
             } else {
                 // hoveredBox is kept: opening the context menu ends the hover, and the menu still needs the box.
                 pointer = nil
+                pointerOnScreen = nil
             }
         }
         .contextMenu {

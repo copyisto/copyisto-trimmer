@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- The copyisto.com alla breve mark (public/icon.svg), centred on the macOS app icon grid (an 824 px tile with a 100 px margin),
+       with large scissors cutting into it at an angle: the tool crops music out of scanned pages. -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="#241D14"/>
+  <g transform="translate(512 512) scale(20) translate(-16 -16)" fill="#F4F0E6">
+    <path d="M20.3 8.158 A8 9.3 0 1 0 20.3 23.842 L20.3 20.442 A5.2 7.9 0 1 1 20.3 11.558 Z"/>
+    <rect x="14.8" y="4.4" width="2.4" height="23.2" rx="1.2"/>
+  </g>
+  <!-- Scissors drawn in a 100-unit box with the blades pointing left, turned to point up-left.
+       Drawn twice: a wider outline in the tile colour cuts them out of the C where they overlap, then the accent on top. -->
+  <g transform="translate(630 638) rotate(45) scale(5) translate(-50 -50)" stroke-linecap="round" stroke-linejoin="round">
+    <g fill="#241D14" stroke="#241D14">
+      <path d="M59 46 L3 38 L49 56 Z" stroke-width="5"/>
+      <path d="M59 54 L3 62 L49 44 Z" stroke-width="5"/>
+      <path d="M52 50 L70 38 M52 50 L70 62" stroke-width="13" fill="none"/>
+      <circle cx="80" cy="32" r="11.5" stroke-width="13" fill="none"/>
+      <circle cx="80" cy="68" r="11.5" stroke-width="13" fill="none"/>
+    </g>
+    <g fill="#E07A45" stroke="#E07A45">
+      <path d="M59 46 L3 38 L49 56 Z" stroke-width="0"/>
+      <path d="M59 54 L3 62 L49 44 Z" stroke-width="0"/>
+      <path d="M52 50 L70 38 M52 50 L70 62" stroke-width="8" fill="none"/>
+      <circle cx="80" cy="32" r="11.5" stroke-width="8" fill="none"/>
+      <circle cx="80" cy="68" r="11.5" stroke-width="8" fill="none"/>
+    </g>
+    <circle cx="52" cy="50" r="3.4" fill="#241D14"/>
+  </g>
+</svg>

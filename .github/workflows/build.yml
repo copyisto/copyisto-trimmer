@@ -1,0 +1,73 @@
+name: Build
+
+# Every push and pull request is tested and bundled; a pushed tag like v0.2.0 also publishes a release with the app.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-26
+    env:
+      # Signing and notarisation run only when these secrets exist, so forks and pull requests still build (ad hoc).
+      MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      NOTARY_KEY: ${{ secrets.NOTARY_KEY }}
+      NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+      NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Test
+        run: swift test
+
+      - name: Import the Developer ID certificate
+        if: env.MACOS_CERTIFICATE != ''
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password="$(uuidgen)"
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain"
+          # The signing keychain first, so codesign finds the certificate; login stays for everything else.
+          security list-keychains -d user -s "$keychain" login.keychain-db
+          echo "SIGN_IDENTITY=Developer ID Application" >> "$GITHUB_ENV"
+
+      - name: Bundle
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then version="${GITHUB_REF_NAME#v}"; else version="0.0.0-${GITHUB_SHA::7}"; fi
+          VERSION="$version" scripts/bundle.sh
+          codesign --verify --deep --strict --verbose=2 "build/Copyisto Trimmer.app"
+
+      - name: Notarise
+        if: env.MACOS_CERTIFICATE != '' && env.NOTARY_KEY != ''
+        run: |
+          echo "$NOTARY_KEY" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+          ditto -c -k --keepParent "build/Copyisto Trimmer.app" "$RUNNER_TEMP/notarise.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarise.zip" \
+            --key "$RUNNER_TEMP/notary.p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --wait
+          # Stapling lets the app open offline without Gatekeeper having to look up the ticket.
+          xcrun stapler staple "build/Copyisto Trimmer.app"
+          spctl --assess --type execute --verbose "build/Copyisto Trimmer.app"
+
+      - name: Zip
+        run: ditto -c -k --keepParent "build/Copyisto Trimmer.app" "build/Copyisto-Trimmer.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Copyisto-Trimmer
+          path: build/Copyisto-Trimmer.zip
+
+      - name: Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" build/Copyisto-Trimmer.zip --title "$GITHUB_REF_NAME" --generate-notes

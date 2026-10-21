@@ -13,6 +13,10 @@ struct ContentView: View {
                         .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 320)
                 } detail: {
                     detail
+                        .inspector(isPresented: $store.showsInspector) {
+                            InspectorView()
+                                .inspectorColumnWidth(min: 240, ideal: 280, max: 420)
+                        }
                 }
                 .navigationTitle(folder.lastPathComponent)
                 .navigationSubtitle(
@@ -155,7 +159,7 @@ struct ContentView: View {
                 ForEach(ExportFormat.allCases, id: \.self) { Text($0.label).tag($0) }
             }
             .pickerStyle(.segmented)
-            .help("Format plików z wycinkami")
+            .help("Format plików z wycinkami; zbiór danych potrzebuje PNG, JPG jest stratny")
         }
         ToolbarItem {
             if let progress = store.exportProgress {
@@ -177,6 +181,10 @@ struct ContentView: View {
                 .disabled(store.totalBoxes == 0)
                 .help("Zapisz wszystkie boxy jako osobne pliki w folderze \(Exporter.folderName) (⌘E)")
             }
+        }
+        ToolbarItem {
+            Button("Tagi i uwagi", systemImage: "sidebar.trailing") { store.showsInspector.toggle() }
+                .help(store.showsInspector ? "Ukryj tagi i uwagi (⌥⌘I)" : "Pokaż tagi i uwagi (⌥⌘I)")
         }
     }
 }

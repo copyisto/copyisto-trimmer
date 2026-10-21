@@ -10,7 +10,8 @@ struct CopyistoTrimmerApp: App {
         Window("Copyisto Trimmer", id: "main") {
             ContentView()
                 .environment(store)
-                .frame(minWidth: 820, minHeight: 560)
+                // Room for the list, a usable page and the inspector side by side.
+                .frame(minWidth: 1000, minHeight: 560)
         }
         .defaultSize(width: 1400, height: 1000)
         .commands { AppCommands(store: store) }
@@ -22,6 +23,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Lets `swift run` bring up a normal foreground app; the bundled .app does this anyway.
         NSApp.setActivationPolicy(.regular)
+        // One window, no tabs; this also keeps ⌘T free for the box's tags.
+        NSWindow.allowsAutomaticWindowTabbing = false
         NSApp.activate()
     }
 
@@ -30,6 +33,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 struct AppCommands: Commands {
     let store: Store
+
+    private var typing: Bool { store.editing != nil }
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
@@ -55,21 +60,25 @@ struct AppCommands: Commands {
                 .keyboardShortcut("0")
                 .disabled(store.zoom == 1)
             Divider()
+            Button(store.showsInspector ? "Ukryj tagi i uwagi" : "Pokaż tagi i uwagi") { store.showsInspector.toggle() }
+                .keyboardShortcut("i", modifiers: [.command, .option])
+            Divider()
         }
         CommandMenu("Zdjęcie") {
+            // Shortcuts without ⌘ would fire even in a text field, so they are off while one is typed in.
             Button("Poprzednie zdjęcie") { store.step(-1) }
                 .keyboardShortcut(.leftArrow, modifiers: [])
-                .disabled(!store.canStep(-1))
+                .disabled(!store.canStep(-1) || typing)
             Button("Następne zdjęcie") { store.step(1) }
                 .keyboardShortcut(.rightArrow, modifiers: [])
-                .disabled(!store.canStep(1))
+                .disabled(!store.canStep(1) || typing)
             Divider()
             Button("Obróć w lewo o 0,1°") { store.rotateCurrent(by: -Store.rotationStep) }
                 .keyboardShortcut("[", modifiers: [])
-                .disabled(store.current == nil)
+                .disabled(store.current == nil || typing)
             Button("Obróć w prawo o 0,1°") { store.rotateCurrent(by: Store.rotationStep) }
                 .keyboardShortcut("]", modifiers: [])
-                .disabled(store.current == nil)
+                .disabled(store.current == nil || typing)
             Button("Wyprostuj automatycznie") { Task { await store.straightenCurrent() } }
                 .keyboardShortcut("l")
                 .disabled(store.current == nil || store.isStraightening)
@@ -78,10 +87,26 @@ struct AppCommands: Commands {
             Divider()
             Button("Usuń zaznaczony box") { store.deleteSelected() }
                 .keyboardShortcut(.delete, modifiers: [])
-                .disabled(store.selectedBox == nil)
+                .disabled(store.selectedBox == nil || typing)
             Button("Odznacz") { store.selectedBox = nil }
                 .keyboardShortcut(.escape, modifiers: [])
+                .disabled(store.selectedBox == nil || typing)
+            Divider()
+            Button("Tagi ramki") { store.describe(.boxTags) }
+                .keyboardShortcut("t")
                 .disabled(store.selectedBox == nil)
+            Button("Uwaga ramki") { store.describe(.boxNote) }
+                .keyboardShortcut("u")
+                .disabled(store.selectedBox == nil)
+            Button("Tagi strony") { store.describe(.pageTags) }
+                .keyboardShortcut("t", modifiers: [.command, .shift])
+                .disabled(store.current == nil)
+            Button("Uwaga strony") { store.describe(.pageNote) }
+                .keyboardShortcut("u", modifiers: [.command, .shift])
+                .disabled(store.current == nil)
+            Button("Tagi folderu") { store.describe(.folderTags) }
+                .keyboardShortcut("t", modifiers: [.command, .option])
+                .disabled(store.folder == nil)
             Divider()
             Button("Eksportuj") { Task { await store.export() } }
                 .keyboardShortcut("e")

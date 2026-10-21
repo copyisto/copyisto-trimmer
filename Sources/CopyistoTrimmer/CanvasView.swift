@@ -60,18 +60,16 @@ struct CanvasView: View {
         }
         .background(Theme.sunken)
         .overlay(alignment: .top) {
-            if let loaded, loaded.url == url, store.sizeChanged(image, actual: loaded.preview.pixelSize) {
-                Label(
-                    "To zdjęcie ma inne wymiary niż przy zaznaczaniu boxów – sprawdź je przed eksportem.",
-                    systemImage: "exclamationmark.triangle"
-                )
-                .font(Theme.text(12, weight: .medium))
-                .foregroundStyle(Theme.warning)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Theme.warningSoft, in: .rect(cornerRadius: 8))
-                .padding(.top, 8)
+            VStack(spacing: 6) {
+                if let loaded, loaded.url == url, store.sizeChanged(image, actual: loaded.preview.pixelSize) {
+                    Banner("To zdjęcie ma inne wymiary niż przy zaznaczaniu boxów – sprawdź je przed eksportem.")
+                }
+                // The dataset wants lossless crops; the CLI flags JPG crops too.
+                if store.format == .jpg {
+                    Banner("Eksport do JPG jest stratny – do zbioru danych wybierz PNG.")
+                }
             }
+            .padding(.top, 8)
         }
         .task(id: url) {
             // Box ids repeat across pages, so a hover left over from the previous page must not reach the context menu.
@@ -226,6 +224,7 @@ struct CanvasView: View {
             }
         }
 
+        let saved = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
         for box in boxes {
             let rect = mapping.toView(box.rect)
             let isSelected = box.id != nil && box.id == store.selectedBox
@@ -233,7 +232,7 @@ struct CanvasView: View {
             context.fill(path, with: .color(Theme.accent.opacity(isSelected ? 0.14 : 0.08)))
             if let id = box.id {
                 context.stroke(path, with: .color(Theme.accent), lineWidth: isSelected ? 2.5 : 1.5)
-                drawLabel(numbers[id] ?? 0, at: rect, in: &context)
+                drawLabel(numbers[id] ?? 0, box: saved[id], at: rect, in: &context)
             } else {
                 // A box being drawn is dashed until the mouse is released.
                 context.stroke(path, with: .color(Theme.accent), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
@@ -252,15 +251,21 @@ struct CanvasView: View {
     }
 
     /// The box number in its top-left corner: the same number as in the exported file name.
-    private func drawLabel(_ number: Int, at rect: CGRect, in context: inout GraphicsContext) {
+    /// Icons mark a box with its own tags or note; a warning, one whose crop has more tags than the CLI accepts.
+    private func drawLabel(_ number: Int, box: Box?, at rect: CGRect, in context: inout GraphicsContext) {
+        let tooManyTags = box.map { store.cropTags(box: $0, on: image).count > Tags.maxPerCrop } ?? false
+        let warning = tooManyTags ? Text("\(Image(systemName: "exclamationmark.triangle.fill")) ") : Text("")
+        let tags = box?.tags != nil ? Text(" \(Image(systemName: "tag.fill"))") : Text("")
+        let note = box?.note != nil ? Text(" \(Image(systemName: "text.bubble.fill"))") : Text("")
+        let label = Text("\(warning)\(String(format: "%03d", number))\(tags)\(note)")
         let text = context.resolve(
-            Text(String(format: "%03d", number))
+            label
                 .font(Theme.text(10, weight: .semibold).monospacedDigit())
                 .foregroundStyle(Theme.onAccent))
         let size = text.measure(in: CGSize(width: 200, height: 50))
         let badge = CGRect(x: rect.minX, y: rect.minY, width: size.width + 8, height: size.height + 2)
         guard badge.width < rect.width, badge.height < rect.height else { return }
-        context.fill(Path(badge), with: .color(Theme.accent))
+        context.fill(Path(badge), with: .color(tooManyTags ? Theme.warning : Theme.accent))
         context.draw(text, at: CGPoint(x: badge.midX, y: badge.midY))
     }
 
@@ -303,6 +308,8 @@ struct CanvasView: View {
     }
 
     private func begin(at location: CGPoint, mapping: Mapping, size: CGSize) -> Drag {
+        // A click on the page leaves the text field, so ⌫ and the arrows act on boxes and pages again.
+        store.editing = nil
         switch hit(at: location, mapping: mapping) {
         case .handle(let box, let handle):
             return Drag(kind: .resize(id: box.id, handle: handle, original: box.rect), draft: box.rect)
@@ -373,6 +380,21 @@ extension Handle {
         case .bottomLeft: .bottomLeading
         case .left: .leading
         }
+    }
+}
+
+private struct Banner: View {
+    let text: String
+
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Label(text, systemImage: "exclamationmark.triangle")
+            .font(Theme.text(12, weight: .medium))
+            .foregroundStyle(Theme.warning)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Theme.warningSoft, in: .rect(cornerRadius: 8))
     }
 }
 

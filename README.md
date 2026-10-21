@@ -24,12 +24,34 @@ Requires macOS 26, on Apple silicon or Intel.
 1. Open a folder of scans (⌘O) or drop it onto the window.
 2. If a page is tilted, press **Wyprostuj automatycznie** (⌘L), or turn it by 0.1° with `[` and `]`.
 3. Drag on a page to draw a box; drag a box to move it, or its handles to resize it.
-4. Press **Eksportuj** (⌘E).
+4. Describe crops in the panel on the right (⌥⌘I): tags and a note for the selected box (⌘T, ⌘U), its page (⇧⌘T, ⇧⌘U) and the whole folder (⌥⌘T).
+5. Press **Eksportuj** (⌘E).
 
 Crops land in `copyisto-trims/` next to the scans, named `<page>_001.png`, `<page>_002.png`, …, at the scan's full resolution.
 Crops of a turned page are cut from the turned page, so the staff lines in them come out level.
 Boxes are saved as you go in `copyisto-trims.json`, so you can close the app and carry on later.
 Every action is a toolbar button, with its shortcut in the tooltip.
+
+Export PNG: the dataset wants lossless crops, and the app warns while JPG is selected.
+
+## Tags and notes
+
+In a tag field, Return or a comma adds a tag and Backspace in the empty field removes the last one.
+Tags are lowercase with single spaces, 1 to 50 characters, exactly as the server stores them, and the field shows them that way as you type.
+Suggestions come from the tags already used in the folder and from `.copyisto-tags.json`, which `copyisto raw pull` writes; the app only reads it.
+A box shows the tags it inherits from its page and the folder, greyed out.
+Its number on the page gets an icon when the box has its own tags or note, and turns into a warning when its crop would have more than 20 tags, which the CLI refuses.
+A box note and its page note share a limit of 2000 characters, counted under each note.
+
+The usual round trip with the [Copyisto CLI](https://github.com/copyisto/copyisto-ingestor):
+
+```sh
+copyisto raw pull M4K-V-01 ~/Trimmer/M4K-V-01
+# Copyisto Trimmer: boxes, tags, notes, export (⌘E)
+copyisto trims push ~/Trimmer/M4K-V-01
+```
+
+`copyisto-trims.json` is the only source of the crops' tags and notes; the website only shows them.
 
 ## Build
 
@@ -69,12 +91,18 @@ Signing needs these repository secrets; without them the build is ad hoc signed 
 
 ```json
 {
-  "version": 2,
+  "version": 3,
+  "tags": ["zeszyt a5"],
   "images": {
     "4H8-E_001.png": {
       "width": 4960, "height": 7016,
       "rotation": -0.46,
-      "boxes": [{ "id": 1, "x": 120, "y": 840, "width": 4700, "height": 1300 }]
+      "tags": ["polifonia"],
+      "note": "strona przekreślona",
+      "boxes": [
+        { "id": 1, "x": 120, "y": 840, "width": 4700, "height": 1300, "tags": ["monodia"], "note": "takt 3 nieczytelny" },
+        { "id": 2, "x": 120, "y": 2300, "width": 4700, "height": 1300 }
+      ]
     }
   }
 }
@@ -82,6 +110,9 @@ Signing needs these repository secrets; without them the build is ad hoc signed 
 
 `rotation` is in degrees clockwise about the page centre, and the boxes are in pixels of the turned page, which keeps the original size and has white in the uncovered corners.
 Straightening finds the angle by projection profile, the deskew method of Leptonica and Tesseract: turned level, the staff lines fall into the fewest rows.
+`tags` on the file apply to every crop, on an image to each crop from it, on a box to its crop only; `note` works the same on images and boxes.
+Empty tags and notes are left out, as `rotation` is on a level page.
+Every new field bumps `version`, because a build that does not know a field would drop it on save; older builds refuse newer files instead.
 Boxes are numbered in the order they were drawn, and deleting one renumbers the rest, so label crops only once a page's boxes are final.
 Each export rewrites the crops and removes its own crops whose box is gone; other files in `copyisto-trims/` are left alone.
 The app has no dependencies beyond the macOS SDK and makes no network requests.

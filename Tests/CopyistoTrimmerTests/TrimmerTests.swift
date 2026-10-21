@@ -106,6 +106,91 @@ import Testing
     #expect(page.size == CGSize(width: 10, height: 20) && page.rotation == nil)
 }
 
+@Test func version2FilesLoadWithoutTagsAndSaveAsVersion3() throws {
+    let folder = try temporaryFolder()
+    let json = #"{"version": 2, "images": {"a.png": {"width": 10, "height": 20, "rotation": 0.4, "boxes": [{"id": 1, "x": 0, "y": 0, "width": 5, "height": 5}]}}}"#
+    let url = folder.appending(path: TrimsFile.fileName)
+    try Data(json.utf8).write(to: url)
+    let file = try TrimsFile.load(from: folder)
+    let page = try #require(file.images["a.png"])
+    #expect(file.tags == nil && page.tags == nil && page.note == nil && page.boxes[0].tags == nil && page.boxes[0].note == nil)
+    try file.save(to: folder)
+    let saved = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+    #expect(saved["version"] as? Int == 3)
+}
+
+@Test func version3KeepsTagsAndNotesOnEveryLevelAndLeavesOutEmptyOnes() throws {
+    let folder = try temporaryFolder()
+    var file = TrimsFile()
+    file.tags = ["zeszyt a5"]
+    var page = ImageTrims(size: CGSize(width: 4960, height: 7016))
+    page.tags = ["polifonia"]
+    page.note = "strona przekreślona"
+    page.add(CGRect(x: 150, y: 300, width: 4700, height: 1300))
+    page.add(CGRect(x: 150, y: 1800, width: 4700, height: 1300))
+    page.boxes[0].tags = ["monodia"]
+    page.boxes[0].note = "takt 3 nieczytelny\ndrugi wiersz"
+    file.images["skan 1.png"] = page
+    try file.save(to: folder)
+    #expect(try TrimsFile.load(from: folder) == file)
+    let json = try String(contentsOf: folder.appending(path: TrimsFile.fileName), encoding: .utf8)
+    // The second box has neither, and the file says so by leaving the keys out, not with [] or "".
+    #expect(json.components(separatedBy: "\"tags\"").count - 1 == 3)
+    #expect(json.components(separatedBy: "\"note\"").count - 1 == 2)
+    #expect(!json.contains("[]") && !json.contains("\"\""))
+}
+
+@Test func movingABoxKeepsItsTagsAndNote() {
+    var box = Box(id: 1, rect: CGRect(x: 0, y: 0, width: 20, height: 20))
+    box.tags = ["monodia"]
+    box.note = "uwaga"
+    box.rect = CGRect(x: 10.4, y: 5.6, width: 30, height: 40)
+    #expect(box.tags == ["monodia"] && box.note == "uwaga" && box.rect == CGRect(x: 10, y: 6, width: 30, height: 40))
+}
+
+@Test func tagsAreNormalizedAsTheServerStoresThem() {
+    #expect(Tags.validated(" Polifonia ") == "polifonia")
+    #expect(Tags.validated("zeszyt  A5") == "zeszyt a5")
+    #expect(Tags.validated("Zeszyt\tA5\n") == "zeszyt a5")
+    #expect(Tags.validated("   ") == nil)
+    #expect(Tags.validated("bell\u{07}") == nil)
+    #expect(Tags.validated(String(repeating: "a", count: 51)) == nil)
+    // Counted as JavaScript counts: "ą" is one UTF-16 unit, so fifty of them fit.
+    #expect(Tags.validated(String(repeating: "Ą", count: 50)) == String(repeating: "ą", count: 50))
+    #expect(Tags.merged(["a", "b", "a"], nil, ["b", "c"]) == ["a", "b", "c"])
+}
+
+@Test func tagFieldShowsTheTagAsItWillBeSaved() {
+    #expect(Tags.typing("  Zeszyt   A") == "zeszyt a")
+    // A trailing space stays, or the second word could never be typed.
+    #expect(Tags.typing("zeszyt ") == "zeszyt ")
+    #expect(Tags.typing(String(repeating: "x", count: 60)).count == Tags.maxLength)
+}
+
+@Test func moreThan20TagsOnACropAreFlagged() {
+    let file = (1...10).map { "f\($0)" }, page = (1...10).map { "p\($0)" }
+    // Repeats count once, as the CLI joins the levels: 20 is fine, 21 is not.
+    #expect(Tags.merged(file, page, ["f1", "p2"]).count == Tags.maxPerCrop)
+    #expect(Tags.merged(file, page, ["f1", "nowy"]).count > Tags.maxPerCrop)
+}
+
+@Test func notesShareTheLimitAsTheCLIJoinsThem() {
+    #expect(Tags.joinedNote(" strona ", nil, "\n ramka\n") == "strona\nramka")
+    #expect(Tags.noteRoom(besides: nil) == 2000)
+    #expect(Tags.noteRoom(besides: "  abc ") == 2000 - 4)
+    #expect(Tags.truncated("zażółć", to: 3) == "zaż")
+}
+
+@Test func tagUsageFileGivesSuggestionsOrNothing() throws {
+    let folder = try temporaryFolder()
+    #expect(Tags.usage(in: folder).isEmpty)
+    let url = folder.appending(path: Tags.usageFile)
+    try Data(#"[{"tag": "polifonia", "pages": 72}, {"tag": " Monodia ", "pages": 3}]"#.utf8).write(to: url)
+    #expect(Tags.usage(in: folder) == ["polifonia", "monodia"])
+    try Data("{ nie json".utf8).write(to: url)
+    #expect(Tags.usage(in: folder).isEmpty)
+}
+
 @Test func positiveRotationTurnsClockwise() {
     let size = CGSize(width: 200, height: 200)
     // The middle of the right edge goes to the middle of the bottom edge.

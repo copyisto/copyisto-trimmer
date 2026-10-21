@@ -5,10 +5,14 @@ import Foundation
 /// Coordinates are in pixels of the original image, like labelme, so they never depend on the window size.
 struct TrimsFile: Codable, Equatable {
     static let fileName = "copyisto-trims.json"
-    // 2 added `rotation`; version 1 apps refuse it instead of dropping the rotation on their next save.
-    static let currentVersion = 2
+    // 2 added `rotation`, 3 added `tags` and `note`.
+    // Every new field needs a new version: Codable drops fields it does not know when it saves,
+    // so an older build must refuse a newer file instead of silently erasing what it cannot read.
+    static let currentVersion = 3
 
     var version = currentVersion
+    /// Tags for every crop in the folder; the CLI adds them to each crop's own.
+    var tags: [String]?
     var images: [String: ImageTrims] = [:]
 
     static func load(from folder: URL) throws -> TrimsFile {
@@ -24,7 +28,10 @@ struct TrimsFile: Codable, Equatable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         // Atomic, so a crash mid-write leaves the previous file intact instead of a truncated one.
-        try encoder.encode(self).write(to: folder.appending(path: Self.fileName), options: .atomic)
+        // Always the current version, whatever was loaded, since the file may now hold fields older builds would drop.
+        var file = self
+        file.version = Self.currentVersion
+        try encoder.encode(file).write(to: folder.appending(path: Self.fileName), options: .atomic)
     }
 }
 
@@ -48,6 +55,9 @@ struct ImageTrims: Codable, Equatable {
     /// Degrees clockwise that the page is turned about its centre before the boxes apply; nil is level.
     /// Boxes are in pixels of the turned page, which keeps the original's size, with white in the uncovered corners.
     var rotation: Double?
+    /// For every crop on this page.
+    var tags: [String]?
+    var note: String?
 
     init(size: CGSize) {
         width = Int(size.width)
@@ -71,14 +81,25 @@ struct Box: Codable, Equatable, Identifiable, Sendable {
     var y: Int
     var width: Int
     var height: Int
+    var tags: [String]?
+    var note: String?
 
     init(id: Int, rect: CGRect) {
         self.id = id
-        x = Int(rect.minX.rounded())
-        y = Int(rect.minY.rounded())
-        width = Int(rect.width.rounded())
-        height = Int(rect.height.rounded())
+        x = 0; y = 0; width = 0; height = 0
+        self.rect = rect
     }
 
-    var rect: CGRect { CGRect(x: x, y: y, width: width, height: height) }
+    /// Set in place when a box moves, so its tags and note go with it.
+    var rect: CGRect {
+        get { CGRect(x: x, y: y, width: width, height: height) }
+        set {
+            x = Int(newValue.minX.rounded())
+            y = Int(newValue.minY.rounded())
+            width = Int(newValue.width.rounded())
+            height = Int(newValue.height.rounded())
+        }
+    }
+
+    var isDescribed: Bool { tags != nil || note != nil }
 }

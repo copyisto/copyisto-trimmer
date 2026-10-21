@@ -40,6 +40,8 @@ struct AppCommands: Commands {
         CommandGroup(replacing: .newItem) {
             Button("Otwórz folder…") { store.isPickingFolder = true }
                 .keyboardShortcut("o")
+            Button("Copyisto Labs: pobierz albo wyślij…") { store.showsLabs = true }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
         }
         CommandGroup(replacing: .undoRedo) {
             Button("Cofnij") { store.undo() }

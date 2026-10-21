@@ -53,6 +53,14 @@ copyisto trims push ~/Trimmer/M4K-V-01
 
 `copyisto-trims.json` is the only source of the crops' tags and notes; the website only shows them.
 
+## Copyisto Labs without the terminal
+
+**Copyisto Labs** in the toolbar (⇧⌘E) runs the same CLI for you, so it has to be installed and signed in (`copyisto login`, or **Zaloguj** in that window).
+It shows who you are signed in as (`copyisto whoami`), pulls a notebook by its code into `~/Trimmer/<code>` and opens it, and **Eksportuj i wyślij** exports the crops and runs `copyisto trims push`.
+A folder that is not a notebook yet, such as fresh scans, becomes a new notebook in the submission you type, with the device and the scans' dpi.
+The CLI's output shows in the window, refusals included, such as a push to a notebook that changed on the server since the pull.
+The app looks for `copyisto` in `~/.bun/bin`, `/opt/homebrew/bin`, `/usr/local/bin` and the inherited `PATH`.
+
 ## Build
 
 You need Xcode 26.
@@ -115,7 +123,7 @@ Empty tags and notes are left out, as `rotation` is on a level page.
 Every new field bumps `version`, because a build that does not know a field would drop it on save; older builds refuse newer files instead.
 Boxes are numbered in the order they were drawn, and deleting one renumbers the rest, so label crops only once a page's boxes are final.
 Each export rewrites the crops and removes its own crops whose box is gone; other files in `copyisto-trims/` are left alone.
-The app has no dependencies beyond the macOS SDK and makes no network requests.
+The app has no dependencies beyond the macOS SDK and makes no network requests itself; Copyisto Labs goes through the `copyisto` CLI.
 
 ## Licence
 

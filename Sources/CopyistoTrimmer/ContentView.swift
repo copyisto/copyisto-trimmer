@@ -33,6 +33,7 @@ struct ContentView: View {
             store.open(url)
             return true
         }
+        .sheet(isPresented: $store.showsLabs) { LabsSheet() }
         .fileImporter(isPresented: $store.isPickingFolder, allowedContentTypes: [.folder]) { result in
             if case .success(let url) = result { store.open(url) }
         }
@@ -183,6 +184,10 @@ struct ContentView: View {
             }
         }
         ToolbarItem {
+            Button("Copyisto Labs", systemImage: "arrow.up.arrow.down.circle") { store.showsLabs = true }
+                .help("Pobierz zeszyt albo wyślij wycinki na serwer (⇧⌘E)")
+        }
+        ToolbarItem {
             Button("Tagi i uwagi", systemImage: "sidebar.trailing") { store.showsInspector.toggle() }
                 .help(store.showsInspector ? "Ukryj tagi i uwagi (⌥⌘I)" : "Pokaż tagi i uwagi (⌥⌘I)")
         }
@@ -243,6 +248,9 @@ private struct EmptyState: View {
             Text("albo przeciągnij folder tutaj")
                 .font(Theme.text(12))
                 .foregroundStyle(Theme.muted)
+            Button("Pobierz zeszyt z Copyisto Labs…") { store.showsLabs = true }
+                .controlSize(.large)
+                .padding(.top, 6)
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

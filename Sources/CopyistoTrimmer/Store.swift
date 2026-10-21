@@ -17,6 +17,8 @@ final class Store {
         didSet { UserDefaults.standard.set(format.rawValue, forKey: "format") }
     }
     var isPickingFolder = false
+    var showsLabs = false
+    let labs = Labs()
     var showsInspector: Bool {
         didSet { UserDefaults.standard.set(showsInspector, forKey: "showsInspector") }
     }
@@ -373,18 +375,23 @@ final class Store {
 
     var isExporting: Bool { exportProgress != nil }
 
-    func export() async {
-        guard let folder, !isExporting else { return }
+    /// `announce` shows the summary; a push exports first and reports its own outcome instead.
+    @discardableResult
+    func export(announce: Bool = true) async -> Bool {
+        guard let folder, !isExporting else { return false }
         exportProgress = (0, 0)
         defer { exportProgress = nil }
         do {
-            exportSummary = try await Exporter.run(
+            let summary = try await Exporter.run(
                 folder: folder, images: images, trims: trims.images, format: format
             ) { done, total in
                 self.exportProgress = (done, total)
             }
+            if announce { exportSummary = summary }
+            return true
         } catch {
             self.error = "Eksport nie powiódł się: \(error.localizedDescription)"
+            return false
         }
     }
 

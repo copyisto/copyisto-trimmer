@@ -98,6 +98,23 @@ import Testing
     #expect(throws: TrimsError.self) { try TrimsFile.load(from: folder) }
 }
 
+@Test func oldNamesAreRenamedButNeverOverANewFile() throws {
+    let folder = try temporaryFolder()
+    try Data(#"{"version": 3, "images": {}}"#.utf8).write(to: folder.appending(path: "copyisto-trims.json"))
+    try FileManager.default.createDirectory(at: folder.appending(path: "copyisto-trims"), withIntermediateDirectories: true)
+    try Data().write(to: folder.appending(path: "copyisto-trims/page_001.json"))
+    try TrimsFile.migrateLegacyNames(in: folder)
+    let names = Set(try FileManager.default.contentsOfDirectory(atPath: folder.path))
+    #expect(names == [TrimsFile.fileName, Exporter.folderName])
+    // Other files in the crops' folder, such as labelme's, move along.
+    #expect(FileManager.default.fileExists(atPath: folder.appending(path: "\(Exporter.folderName)/page_001.json").path))
+
+    try Data("stare".utf8).write(to: folder.appending(path: "copyisto-trims.json"))
+    try TrimsFile.migrateLegacyNames(in: folder)
+    #expect(try String(contentsOf: folder.appending(path: TrimsFile.fileName), encoding: .utf8).contains("version"))
+    #expect(FileManager.default.fileExists(atPath: folder.appending(path: "copyisto-trims.json").path))
+}
+
 @Test func version1FilesStillLoad() throws {
     let folder = try temporaryFolder()
     let json = #"{"version": 1, "images": {"a.png": {"width": 10, "height": 20, "nextId": 3, "boxes": []}}}"#

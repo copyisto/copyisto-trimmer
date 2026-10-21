@@ -1,10 +1,13 @@
 import CoreGraphics
 import Foundation
 
-/// The boxes for one folder of scans, stored next to them as `copyisto-trims.json`.
+/// The boxes for one folder of scans, stored next to them as `trims.copyisto.json`.
+/// The `.copyisto` suffix marks it, and the crops' folder, as Copyisto's, so they do not look like stray files to move or delete.
 /// Coordinates are in pixels of the original image, like labelme, so they never depend on the window size.
 struct TrimsFile: Codable, Equatable {
-    static let fileName = "copyisto-trims.json"
+    static let fileName = "trims.copyisto.json"
+    /// The names before, renamed when a folder opens, so a folder cut with an older build carries on where it left off.
+    static let legacyNames = [("copyisto-trims.json", fileName), ("copyisto-trims", Exporter.folderName)]
     // 2 added `rotation`, 3 added `tags` and `note`.
     // Every new field needs a new version: Codable drops fields it does not know when it saves,
     // so an older build must refuse a newer file instead of silently erasing what it cannot read.
@@ -22,6 +25,16 @@ struct TrimsFile: Codable, Equatable {
         // Saving would drop whatever a newer version added, so refuse rather than lose boxes.
         guard file.version <= currentVersion else { throw TrimsError.newerVersion(file.version) }
         return file
+    }
+
+    static func migrateLegacyNames(in folder: URL) throws {
+        let files = FileManager.default
+        for (old, new) in legacyNames {
+            let from = folder.appending(path: old), to = folder.appending(path: new)
+            // With both there, the new one is the current work; the old one is left alone for a person to look at.
+            guard files.fileExists(atPath: from.path), !files.fileExists(atPath: to.path) else { continue }
+            try files.moveItem(at: from, to: to)
+        }
     }
 
     func save(to folder: URL) throws {

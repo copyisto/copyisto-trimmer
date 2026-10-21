@@ -71,6 +71,7 @@ final class Store {
         let folder = isFolder ? url : url.deletingLastPathComponent()
         do {
             // Load first: if the file is unreadable we must not open the folder, or the next autosave would overwrite it.
+            try TrimsFile.migrateLegacyNames(in: folder)
             let trims = try TrimsFile.load(from: folder)
             self.folder = folder
             self.trims = trims

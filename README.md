@@ -27,9 +27,10 @@ Requires macOS 26, on Apple silicon or Intel.
 4. Describe crops in the panel on the right (⌥⌘I): tags and a note for the selected box (⌘T, ⌘U), its page (⇧⌘T, ⇧⌘U) and the whole folder (⌃⌘T).
 5. Press **Eksportuj** (⌘E).
 
-Crops land in `copyisto-trims/` next to the scans, named `<page>_001.png`, `<page>_002.png`, …, at the scan's full resolution.
+Crops land in `trims.copyisto/` next to the scans, named `<page>_001.png`, `<page>_002.png`, …, at the scan's full resolution.
 Crops of a turned page are cut from the turned page, so the staff lines in them come out level.
-Boxes are saved as you go in `copyisto-trims.json`, so you can close the app and carry on later.
+Boxes are saved as you go in `trims.copyisto.json`, so you can close the app and carry on later.
+The `.copyisto` suffix marks both as the app's, so keep them next to the scans; a folder from an older build, with `copyisto-trims.json` and `copyisto-trims/`, is renamed when it opens.
 Every action is a toolbar button, with its shortcut in the tooltip.
 
 Export PNG: the dataset wants lossless crops, and the app warns while JPG is selected.
@@ -51,7 +52,7 @@ copyisto raw pull M4K-V-01 ~/Trimmer/M4K-V-01
 copyisto trims push ~/Trimmer/M4K-V-01
 ```
 
-`copyisto-trims.json` is the only source of the crops' tags and notes; the website only shows them.
+`trims.copyisto.json` is the only source of the crops' tags and notes; the website only shows them.
 
 ## Copyisto Labs without the terminal
 
@@ -95,7 +96,7 @@ Signing needs these repository secrets; without them the build is ad hoc signed 
 
 ## How it works
 
-`copyisto-trims.json` stores boxes in pixels of the original scan, like labelme:
+`trims.copyisto.json` stores boxes in pixels of the original scan, like labelme:
 
 ```json
 {
@@ -122,7 +123,7 @@ Straightening finds the angle by projection profile, the deskew method of Lepton
 Empty tags and notes are left out, as `rotation` is on a level page.
 Every new field bumps `version`, because a build that does not know a field would drop it on save; older builds refuse newer files instead.
 Boxes are numbered in the order they were drawn, and deleting one renumbers the rest, so label crops only once a page's boxes are final.
-Each export rewrites the crops and removes its own crops whose box is gone; other files in `copyisto-trims/` are left alone.
+Each export rewrites the crops and removes its own crops whose box is gone; other files in `trims.copyisto/` are left alone.
 The app has no dependencies beyond the macOS SDK and makes no network requests itself; Copyisto Labs goes through the `copyisto` CLI.
 
 ## Licence

@@ -304,7 +304,7 @@ private struct NoteEditor: View {
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 4) {
-            TextEditor(text: Binding(get: { note }, set: onChange))
+            TextEditor(text: Binding(get: { note }, set: { onChange($0) }))
                 .font(Theme.text(12))
                 .scrollContentBackground(.hidden)
                 .padding(6)

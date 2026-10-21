@@ -44,10 +44,11 @@ struct AppCommands: Commands {
         CommandGroup(replacing: .undoRedo) {
             Button("Cofnij") { store.undo() }
                 .keyboardShortcut("z")
-                .disabled(!store.canUndo)
+                // In a text field it undoes the typing, which has its own history.
+                .disabled(!store.canUndo && store.editing == nil)
             Button("Ponów") { store.redo() }
                 .keyboardShortcut("z", modifiers: [.command, .shift])
-                .disabled(!store.canRedo)
+                .disabled(!store.canRedo && store.editing == nil)
         }
         CommandGroup(before: .toolbar) {
             Button("Powiększ") { store.zoomIn() }
@@ -105,7 +106,8 @@ struct AppCommands: Commands {
                 .keyboardShortcut("u", modifiers: [.command, .shift])
                 .disabled(store.current == nil)
             Button("Tagi folderu") { store.describe(.folderTags) }
-                .keyboardShortcut("t", modifiers: [.command, .option])
+                // ⌥⌘T is the system's Show/Hide Toolbar.
+                .keyboardShortcut("t", modifiers: [.command, .control])
                 .disabled(store.folder == nil)
             Divider()
             Button("Eksportuj") { Task { await store.export() } }

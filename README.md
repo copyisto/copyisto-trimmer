@@ -24,7 +24,7 @@ Requires macOS 26, on Apple silicon or Intel.
 1. Open a folder of scans (⌘O) or drop it onto the window.
 2. If a page is tilted, press **Wyprostuj automatycznie** (⌘L), or turn it by 0.1° with `[` and `]`.
 3. Drag on a page to draw a box; drag a box to move it, or its handles to resize it.
-4. Describe crops in the panel on the right (⌥⌘I): tags and a note for the selected box (⌘T, ⌘U), its page (⇧⌘T, ⇧⌘U) and the whole folder (⌥⌘T).
+4. Describe crops in the panel on the right (⌥⌘I): tags and a note for the selected box (⌘T, ⌘U), its page (⇧⌘T, ⇧⌘U) and the whole folder (⌃⌘T).
 5. Press **Eksportuj** (⌘E).
 
 Crops land in `copyisto-trims/` next to the scans, named `<page>_001.png`, `<page>_002.png`, …, at the scan's full resolution.

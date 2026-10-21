@@ -50,6 +50,8 @@ struct InspectorView: View {
                     suggestions: store.tagSuggestions,
                     field: .boxTags, focus: $focus
                 ) { store.setBoxTags($0, box: id, on: image) }
+                // Half-typed text belongs to the box it was typed for.
+                .id(id)
                 if total > Tags.maxPerCrop {
                     Warning("Wycinek ma \(plural(total, "tag", "tagi", "tagów")) z folderu, strony i ramki – CLI przyjmie najwyżej \(Tags.maxPerCrop).")
                 }
@@ -81,6 +83,7 @@ struct InspectorView: View {
                 suggestions: store.tagSuggestions,
                 field: .pageTags, focus: $focus
             ) { store.setPageTags($0, on: image) }
+            .id(image)
             if total > Tags.maxPerCrop {
                 Warning("Strona ma z folderem \(plural(total, "tag", "tagi", "tagów")) – CLI przyjmie najwyżej \(Tags.maxPerCrop) na wycinek.")
             }

@@ -1,46 +1,63 @@
 import SwiftUI
 
 enum InspectorField: Hashable {
-    case boxTags, boxNote, pageTags, pageNote, folderTags
-    case fileDevice, fileDPI, fileTags, fileNote, notebookTags, notebookNote
+    case boxTags, boxNote
+    case scanDevice, scanDPI, scanTags, scanNote, trimmerPageNote
+    case notebookTags, notebookNote
+
+    var tab: InspectorTab {
+        switch self {
+        case .boxTags, .boxNote: .crop
+        case .notebookTags, .notebookNote: .notebook
+        default: .scan
+        }
+    }
 }
 
-/// Tags and notes for the selected box, its page and its notebook, which `copyisto push` sends with each crop;
-/// in a submission also the shared description of the file, the notebook and the whole submission.
+enum InspectorTab: Hashable {
+    case crop, scan, notebook
+}
+
+/// Describes one level at a time: the selected box's crop, the scan, or its notebook.
+/// Each tab edits only its own level and shows what it inherits from above, greyed, once.
 struct InspectorView: View {
     @Environment(Store.self) private var store
     @FocusState private var focus: InspectorField?
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                if let image = store.current {
-                    boxSection(image)
-                    Divider()
-                    pageSection(image)
-                    if store.submission != nil {
-                        Divider()
-                        fileSection(image)
-                    }
-                    Divider()
-                }
-                if let notebook = store.current.flatMap(store.notebook(of:)) ?? store.notebooks.first {
-                    notebookSection(notebook)
-                }
-                if let submission = store.submission {
-                    Divider()
-                    submissionSection(submission)
-                }
+        @Bindable var store = store
+        VStack(spacing: 0) {
+            Picker("Opis", selection: $store.inspectorTab) {
+                Text("Wycinek").tag(InspectorTab.crop)
+                // In a submission the scan is a file of the notebook's RAW, and its description reaches the server.
+                Text(store.submission == nil ? "Skan" : "Skan RAW").tag(InspectorTab.scan)
+                Text(store.submission == nil ? "Folder" : "Zeszyt").tag(InspectorTab.notebook)
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(12)
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    switch store.inspectorTab {
+                    case .crop: cropTab
+                    case .scan: scanTab
+                    case .notebook: notebookTab
+                    }
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .background(Theme.paper)
         // The Store mirrors the focus, so the menus know when keys like ← and ⌫ belong to the text.
         .onChange(of: focus) { store.editing = focus }
-        .onChange(of: store.editing) { if focus != store.editing { focus = store.editing } }
+        .onChange(of: store.editing) {
+            // A shortcut may switch the tab first; its field exists only from the next turn of the run loop.
+            let field = store.editing
+            if focus != field { DispatchQueue.main.async { focus = field } }
+        }
         .onAppear {
-            // ⌘T on a hidden inspector opens it first; the field exists only from the next turn of the run loop.
             let field = store.editing
             DispatchQueue.main.async { focus = field }
         }
@@ -48,188 +65,238 @@ struct InspectorView: View {
         .onExitCommand { focus = nil }
     }
 
+    // MARK: Crop
+
     @ViewBuilder
-    private func boxSection(_ image: String) -> some View {
-        let boxes = store.boxes(for: image)
-        if let id = store.selectedBox, let index = boxes.firstIndex(where: { $0.id == id }) {
-            let box = boxes[index]
-            let total = store.cropTags(box: box, on: image).count
-            VStack(alignment: .leading, spacing: 10) {
-                SectionTitle("Ramka \(String(format: "%03d", index + 1))", detail: "Tylko ten wycinek.")
+    private var cropTab: some View {
+        if let image = store.current {
+            let boxes = store.boxes(for: image)
+            if let id = store.selectedBox, let index = boxes.firstIndex(where: { $0.id == id }) {
+                let box = boxes[index]
+                let total = store.cropTags(box: box, on: image).count
+                let meta = store.meta(of: image)
+                SectionTitle("Wycinek \(String(format: "%03d", index + 1))", detail: "Tylko ten wycinek ze skanu „\(store.fileName(of: image))”.")
+                FieldLabel("Tagi")
                 TagEditor(
-                    tags: box.tags ?? [],
-                    inherited: inherited(store.inheritedTags(of: image), own: box.tags),
-                    suggestions: store.tagSuggestions,
+                    tags: box.tags ?? [], inherited: store.inheritedTags(of: image), suggestions: store.tagSuggestions,
                     field: .boxTags, focus: $focus
                 ) { store.setBoxTags($0, box: id, on: image) }
                 // Half-typed text belongs to the box it was typed for.
                 .id(id)
                 if total > Tags.maxPerCrop {
-                    Warning("Wycinek ma \(plural(total, "tag", "tagi", "tagów")) razem z odziedziczonymi – CLI przyjmie najwyżej \(Tags.maxPerCrop).")
+                    Warning("Wycinek ma razem z odziedziczonymi \(plural(total, "tag", "tagi", "tagów")) – CLI przyjmie najwyżej \(Tags.maxPerCrop).")
                 }
+                FieldLabel("Uwaga")
                 NoteEditor(
                     note: box.note ?? "",
                     length: store.cropNote(box: box, on: image).utf16.count,
-                    help: store.submission == nil ? "Razem z uwagą strony" : "Razem z uwagą pliku i strony",
+                    help: "Razem z uwagą skanu",
                     field: .boxNote, focus: $focus
                 ) { store.setBoxNote($0, box: id, on: image) }
+                Inherited(
+                    title: "Dziedziczy ze skanu i wyżej",
+                    tags: store.inheritedTags(of: image).filter { !(box.tags ?? []).contains($0) },
+                    note: Tags.joinedNote(meta.note, store.pageNote(image)),
+                    source: store.submission == nil ? nil : Description.label(meta.source))
+            } else {
+                SectionTitle("Wycinek", detail: nil)
+                Hint(boxes.isEmpty ? "Narysuj ramkę na skanie, żeby opisać jej wycinek." : "Zaznacz ramkę na skanie, żeby opisać jej wycinek.")
             }
         } else {
-            VStack(alignment: .leading, spacing: 6) {
-                SectionTitle("Ramka", detail: nil)
-                Text(boxes.isEmpty ? "Narysuj ramkę na stronie, żeby ją opisać." : "Zaznacz ramkę, żeby ją opisać.")
-                    .font(Theme.text(12))
-                    .foregroundStyle(Theme.muted)
-            }
+            Hint("Wybierz skan z listy.")
         }
     }
 
-    private func pageSection(_ image: String) -> some View {
-        let above = Tags.merged(store.meta(of: image).tags, store.notebookTags(store.notebookPath(of: image)))
-        let total = store.inheritedTags(of: image).count
-        let longest = store.boxes(for: image).map { store.cropNote(box: $0, on: image).utf16.count }.max()
-        let fileNote = store.meta(of: image).note
-        return VStack(alignment: .leading, spacing: 10) {
-            SectionTitle("Strona", detail: "Każdy wycinek z „\(store.fileName(of: image))”.")
-            TagEditor(
-                tags: store.pageTags(image),
-                inherited: inherited(above, own: store.pageTags(image)),
-                suggestions: store.tagSuggestions,
-                field: .pageTags, focus: $focus
-            ) { store.setPageTags($0, on: image) }
+    // MARK: Scan
+
+    @ViewBuilder
+    private var scanTab: some View {
+        if let image = store.current {
+            let level = store.descriptionLevel(of: image)
+            let own = store.scanTags(image)
+            let above = Tags.merged(store.meta(of: image).tags, store.notebookTags(store.notebookPath(of: image)))
+            let total = store.inheritedTags(of: image).count
+            let longest = store.boxes(for: image).map { store.cropNote(box: $0, on: image).utf16.count }.max()
+            SectionTitle(
+                "\(store.submission == nil ? "Skan" : "Skan RAW") „\(store.fileName(of: image))”",
+                detail: store.submission == nil ? "Każdy wycinek z tego skanu." : "Ten plik w zgłoszeniu i każdy wycinek z niego.")
+            if store.submission != nil { source(image, level: level) }
+            FieldLabel("Tagi")
+            TagEditor(tags: own, inherited: above, suggestions: store.tagSuggestions, field: .scanTags, focus: $focus) {
+                store.setScanTags($0, on: image)
+            }
             .id(image)
             if total > Tags.maxPerCrop {
-                Warning("Strona ma razem z odziedziczonymi \(plural(total, "tag", "tagi", "tagów")) – CLI przyjmie najwyżej \(Tags.maxPerCrop) na wycinek.")
+                Warning("Skan ma razem z odziedziczonymi \(plural(total, "tag", "tagi", "tagów")) – CLI przyjmie najwyżej \(Tags.maxPerCrop) na wycinek.")
             }
-            if !fileNote.isEmpty {
-                InheritedNote(title: "Uwaga pliku z opisu", text: fileNote)
-            }
+            FieldLabel("Uwaga")
             NoteEditor(
-                note: store.pageNote(image),
+                note: store.scanNote(image),
                 length: longest ?? store.cropNote(box: nil, on: image).utf16.count,
-                help: "Razem z najdłuższą uwagą ramki na tej stronie",
-                field: .pageNote, focus: $focus
-            ) { store.setPageNote($0, on: image) }
+                help: "Razem z najdłuższą uwagą wycinka z tego skanu",
+                field: .scanNote, focus: $focus
+            ) { store.setScanNote($0, on: image) }
+            // Written by the trimmer before the description could hold the scan's note; still sent with each crop.
+            if level != nil, !store.pageNote(image).isEmpty {
+                FieldLabel("Uwaga z pliku trimmera (dla wycinków)")
+                NoteEditor(
+                    note: store.pageNote(image),
+                    length: longest ?? store.cropNote(box: nil, on: image).utf16.count,
+                    help: "Razem z uwagą skanu i najdłuższą uwagą wycinka",
+                    field: .trimmerPageNote, focus: $focus
+                ) { store.setPageNote($0, on: image) }
+            }
+            Inherited(
+                title: store.submission == nil ? "Dziedziczy z folderu" : "Dziedziczy z zeszytu i zgłoszenia",
+                tags: above.filter { !own.contains($0) }, note: "", source: nil)
+            if store.submission != nil {
+                Footnote(level == nil
+                    ? "Zeszyt nie ma jeszcze numeru, więc urządzenie ustawisz po copyisto push. Tagi i uwaga zapisują się w pliku trimmera."
+                    : "Zapisuje się w opisie zgłoszenia (.copyisto/description.json); wyśle go copyisto push.")
+            }
+        } else {
+            Hint("Wybierz skan z listy.")
         }
     }
 
-    /// The scan's own part of the shared description: what it was taken with, its tags and note, for it and its crops.
-    private func fileSection(_ image: String) -> some View {
-        let level = store.descriptionLevel(of: image)
-        let meta = store.meta(of: image)
+    /// What the scan was taken with; unset fields come from the notebook or the submission, shown as placeholders.
+    @ViewBuilder
+    private func source(_ image: String, level: [String]?) -> some View {
         let description = store.description
         let number = store.notebook(of: image).flatMap(store.number(of:))
         let above = description.meta(levels: [Description.top] + (number.map { [Description.notebook($0)] } ?? []))
         let own = level.map(description.source(at:)) ?? Description.Source()
         // The device and dpi above apply only while the file keeps their device type.
         let carried = own.deviceType == nil || own.deviceType == above.source.deviceType ? above.source : Description.Source()
-        let longest = store.boxes(for: image).map { store.cropNote(box: $0, on: image).utf16.count }.max()
-        return VStack(alignment: .leading, spacing: 10) {
-            SectionTitle("Plik w opisie zgłoszenia", detail: "Skan i każdy wycinek z niego.")
-            Text(Description.label(meta.source) ?? "Źródło nieznane")
-                .font(Theme.text(12, weight: .medium))
-                .foregroundStyle(Theme.text)
-            Group {
-                Picker("Urządzenie", selection: Binding(
-                    get: { own.deviceType ?? "" },
-                    set: { value in level.map { store.setDescription(.deviceType, value.isEmpty ? nil : value, at: $0) } }
-                )) {
-                    Text(above.source.deviceType.map { "Jak w zeszycie (\(Description.deviceLabel($0)))" } ?? "Nie podano").tag("")
-                    ForEach(Description.deviceTypes, id: \.self) { Text(Description.deviceLabel($0).capitalized).tag($0) }
+        FieldLabel("Urządzenie: \(Description.label(store.meta(of: image).source) ?? "nie podano")")
+        Group {
+            Picker("Rodzaj", selection: Binding(
+                get: { own.deviceType ?? "" },
+                set: { value in level.map { store.setDescription(.deviceType, value.isEmpty ? nil : value, at: $0) } }
+            )) {
+                Text(above.source.deviceType.map { "Jak w zeszycie (\(Description.deviceLabel($0)))" } ?? "Nie podano").tag("")
+                ForEach(Description.deviceTypes, id: \.self) { Text(Description.deviceLabel($0).capitalized).tag($0) }
+            }
+            .labelsHidden()
+            HStack(spacing: 6) {
+                DraftField(
+                    value: own.device ?? "", prompt: carried.device ?? "Model, np. Epson DS-70000",
+                    field: .scanDevice, focus: $focus
+                ) { text in level.map { store.setDescription(.device, text, at: $0) } }
+                DraftField(
+                    value: own.dpi.map(String.init) ?? "", prompt: carried.dpi.map { "\($0) dpi" } ?? "DPI",
+                    field: .scanDPI, focus: $focus
+                ) { text in
+                    // Half-typed junk waits in the field instead of erasing the stored dpi.
+                    let dpi = Int(text.trimmingCharacters(in: .whitespaces))
+                    if let level, dpi != nil || text.isEmpty { store.setDescription(.dpi, dpi, at: level) }
                 }
-                HStack(spacing: 6) {
-                    DraftField(
-                        value: own.device ?? "", prompt: carried.device ?? "Model, np. Epson DS-70000",
-                        field: .fileDevice, focus: $focus
-                    ) { text in level.map { store.setDescription(.device, text, at: $0) } }
-                    DraftField(
-                        value: own.dpi.map(String.init) ?? "", prompt: carried.dpi.map { "\($0)" } ?? "DPI",
-                        field: .fileDPI, focus: $focus
-                    ) { text in
-                        // Half-typed junk waits in the field instead of erasing the stored dpi.
-                        let dpi = Int(text.trimmingCharacters(in: .whitespaces))
-                        if let level, dpi != nil || text.isEmpty { store.setDescription(.dpi, dpi, at: level) }
-                    }
-                    .frame(width: 64)
+                .frame(width: 72)
+            }
+        }
+        .disabled(level == nil)
+    }
+
+    // MARK: Notebook
+
+    @ViewBuilder
+    private var notebookTab: some View {
+        if let notebook = store.current.flatMap(store.notebook(of:)) ?? store.notebooks.first {
+            let level = store.descriptionLevel(of: notebook)
+            let own = store.notebookOwnTags(notebook)
+            let top = store.description.tags(at: Description.top)
+            if let submission = store.submission {
+                SectionTitle("Zeszyt \(store.title(of: notebook))", detail: "Każdy skan RAW i wycinek z tego zeszytu.")
+                FieldLabel("Tagi")
+                TagEditor(tags: own, inherited: top, suggestions: store.tagSuggestions, field: .notebookTags, focus: $focus) {
+                    store.setNotebookOwnTags($0, of: notebook)
                 }
-                TagEditor(
-                    tags: level.map(description.tags(at:)) ?? [],
-                    inherited: inherited(above.tags, own: level.map(description.tags(at:))),
-                    suggestions: store.tagSuggestions,
-                    field: .fileTags, focus: $focus
-                ) { tags in level.map { store.setDescription(.tags, tags, at: $0) } }
-                .id("file:\(image)")
+                .id("notebook:\(notebook.path)")
+                FieldLabel("Uwaga do zeszytu (nie trafia do wycinków)")
                 NoteEditor(
-                    note: meta.note,
-                    length: longest ?? store.cropNote(box: nil, on: image).utf16.count,
-                    help: "Razem z uwagami strony i najdłuższą uwagą ramki",
-                    field: .fileNote, focus: $focus
-                ) { store.setFileNote($0, on: image) }
-            }
-            .disabled(level == nil)
-            Footnote(level == nil ? "Opis plików nowego zeszytu – po copyisto push, kiedy zeszyt dostanie numer." : "Zapisuje się w opisie zgłoszenia; wyśle go copyisto push.")
-        }
-    }
-
-    private func notebookSection(_ notebook: Notebook) -> some View {
-        let trimmerTags = TagEditor(
-            tags: store.notebookTags(notebook.path), inherited: [], suggestions: store.tagSuggestions,
-            field: .folderTags, focus: $focus
-        ) { store.setNotebookTags($0, of: notebook.path) }
-        return VStack(alignment: .leading, spacing: 10) {
-            if store.submission != nil {
-                let level = store.descriptionLevel(of: notebook)
-                let description = store.description
-                SectionTitle("Zeszyt \(store.title(of: notebook))", detail: "Jego pliki i ich wycinki.")
-                Group {
-                    TagEditor(
-                        tags: level.map(description.tags(at:)) ?? [],
-                        inherited: inherited(description.tags(at: Description.top), own: level.map(description.tags(at:))),
-                        suggestions: store.tagSuggestions,
-                        field: .notebookTags, focus: $focus
-                    ) { tags in level.map { store.setDescription(.tags, tags, at: $0) } }
-                    .id("notebook:\(notebook.path)")
-                    NoteEditor(
-                        note: level.map(description.note(at:)) ?? "",
-                        length: level.map { description.note(at: $0).utf16.count } ?? 0,
-                        help: "Uwaga do zeszytu; nie trafia do wycinków",
-                        field: .notebookNote, focus: $focus
-                    ) { note in level.map { store.setDescription(.note, note, at: $0) } }
-                }
+                    note: level.map(store.description.note(at:)) ?? "",
+                    length: level.map { store.description.note(at: $0).utf16.count } ?? 0,
+                    help: "Uwaga do zeszytu",
+                    field: .notebookNote, focus: $focus
+                ) { note in level.map { store.setDescription(.note, note, at: $0) } }
                 .disabled(level == nil)
-                Footnote(level == nil ? "Opis nowego zeszytu – po copyisto push, kiedy dostanie numer." : "Uwaga dotyczy zeszytu, nie wycinków. Wyśle ją copyisto push.")
-                Text("Tagi z trimmera dla każdego wycinka z zeszytu")
-                    .font(Theme.text(12, weight: .medium))
-                    .foregroundStyle(Theme.text)
-                    .padding(.top, 4)
-                trimmerTags
+                Inherited(
+                    title: "Dziedziczy ze zgłoszenia \(submission.code)",
+                    tags: top.filter { !own.contains($0) }, note: "",
+                    source: Description.label(store.description.source(at: Description.top)))
+                Footnote(level == nil
+                    ? "Zeszyt nie ma jeszcze numeru: uwagę ustawisz po copyisto push. Tagi zapisują się w pliku trimmera. Opis całego zgłoszenia zmienisz poleceniem copyisto describe."
+                    : "Zapisuje się w opisie zgłoszenia; wyśle go copyisto push. Opis całego zgłoszenia zmienisz poleceniem copyisto describe.")
             } else {
-                SectionTitle("Folder", detail: "Każdy wycinek z tego folderu.")
-                trimmerTags
-            }
-        }
-    }
-
-    /// Set for the whole submission with `copyisto describe`; shown for the full picture, not edited here.
-    private func submissionSection(_ submission: Submission) -> some View {
-        let description = store.description
-        let tags = description.tags(at: Description.top)
-        return VStack(alignment: .leading, spacing: 8) {
-            SectionTitle("Zgłoszenie \(submission.code)", detail: "Każdy plik zgłoszenia. Zmienisz to poleceniem copyisto describe.")
-            Text(Description.label(description.source(at: Description.top)) ?? "Źródło nie podane")
-                .font(Theme.text(12))
-                .foregroundStyle(Theme.muted)
-            if !tags.isEmpty {
-                FlowLayout(spacing: 4) {
-                    ForEach(tags, id: \.self) { Chip(tag: $0, onRemove: nil) }
+                SectionTitle("Folder „\(notebook.name)”", detail: "Każdy wycinek z tego folderu.")
+                FieldLabel("Tagi")
+                TagEditor(tags: own, inherited: [], suggestions: store.tagSuggestions, field: .notebookTags, focus: $focus) {
+                    store.setNotebookOwnTags($0, of: notebook)
                 }
             }
         }
     }
+}
 
-    /// Tags from the levels above, shown for the full picture; one the level sets itself appears once, as its own.
-    private func inherited(_ tags: [String], own: [String]?) -> [String] {
-        tags.filter { !(own ?? []).contains($0) }
+private struct FieldLabel: View {
+    let text: String
+
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .font(Theme.text(11, weight: .medium))
+            .foregroundStyle(Theme.muted)
+            .padding(.top, 2)
+    }
+}
+
+private struct Hint: View {
+    let text: String
+
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .font(Theme.text(12))
+            .foregroundStyle(Theme.muted)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// What a level gets from the levels above, greyed, so the tab shows the whole picture while editing only its own.
+private struct Inherited: View {
+    let title: String
+    let tags: [String]
+    let note: String
+    let source: String?
+
+    var body: some View {
+        if !tags.isEmpty || !note.isEmpty || source != nil {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title)
+                    .font(Theme.text(10, weight: .medium))
+                if let source {
+                    Text(source).font(Theme.text(12))
+                }
+                if !tags.isEmpty {
+                    FlowLayout(spacing: 4) {
+                        ForEach(tags, id: \.self) { Chip(tag: $0, onRemove: nil) }
+                    }
+                }
+                if !note.isEmpty {
+                    Text(note)
+                        .font(Theme.text(12))
+                        .lineLimit(4)
+                        .textSelection(.enabled)
+                }
+            }
+            .foregroundStyle(Theme.muted)
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.sunken, in: .rect(cornerRadius: 6))
+            .padding(.top, 6)
+        }
     }
 }
 
@@ -243,27 +310,6 @@ private struct Footnote: View {
             .font(Theme.text(11))
             .foregroundStyle(Theme.muted)
             .fixedSize(horizontal: false, vertical: true)
-    }
-}
-
-/// A note from a level above, greyed like inherited tags; it is edited where it belongs.
-private struct InheritedNote: View {
-    let title: String
-    let text: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(Theme.text(10, weight: .medium))
-            Text(text)
-                .font(Theme.text(12))
-                .lineLimit(4)
-                .textSelection(.enabled)
-        }
-        .foregroundStyle(Theme.muted)
-        .padding(8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.sunken, in: .rect(cornerRadius: 6))
     }
 }
 
@@ -311,6 +357,7 @@ private struct Warning: View {
 /// Every key has a click: the chip's ✕ removes, a suggestion row adds.
 struct TagEditor: View {
     let tags: [String]
+    /// Tags from the levels above, shown elsewhere; only left out of the suggestions here.
     let inherited: [String]
     let suggestions: [String]
     let field: InspectorField
@@ -335,11 +382,8 @@ struct TagEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if !tags.isEmpty || !inherited.isEmpty {
+            if !tags.isEmpty {
                 FlowLayout(spacing: 4) {
-                    ForEach(inherited, id: \.self) { tag in
-                        Chip(tag: tag, onRemove: nil)
-                    }
                     ForEach(tags, id: \.self) { tag in
                         Chip(tag: tag) { onChange(tags.filter { $0 != tag }) }
                     }

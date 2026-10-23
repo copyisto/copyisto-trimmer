@@ -43,7 +43,12 @@ final class Store {
             remember()
         }
     }
-    var selectedBox: Int?
+    var selectedBox: Int? {
+        // Picking a box is picking it to describe.
+        didSet { if let selectedBox, selectedBox != oldValue { inspectorTab = .crop } }
+    }
+    /// What the inspector shows: one level at a time.
+    var inspectorTab = InspectorTab.scan
     /// Notebook sections folded in the list, by `Notebook.path`.
     var collapsed: Set<String> = [] {
         didSet { remember() }
@@ -475,7 +480,55 @@ final class Store {
     /// Opens the inspector on a field, so describing hundreds of boxes needs no mouse.
     func describe(_ field: InspectorField) {
         showsInspector = true
+        inspectorTab = field.tab
         editing = field
+    }
+
+    /// A scan's own tags: in a submission's numbered notebook those of its part of the description, which reach the RAW
+    /// file and every crop, and any the trimmer's file has for the page; elsewhere only the trimmer's.
+    func scanTags(_ image: String) -> [String] {
+        Tags.merged(descriptionLevel(of: image).map(description.tags(at:)), pageTags(image))
+    }
+
+    func setScanTags(_ tags: [String], on image: String) {
+        route(tags, from: scanTags(image), description: descriptionLevel(of: image), trimmer: pageTags(image)) {
+            setPageTags($0, on: image)
+        }
+    }
+
+    /// The scan's note, kept where its tags are; the trimmer's page note shows apart when a description holds the scan's.
+    func scanNote(_ image: String) -> String {
+        descriptionLevel(of: image) == nil ? pageNote(image) : meta(of: image).note
+    }
+
+    func setScanNote(_ note: String, on image: String) {
+        if descriptionLevel(of: image) == nil { setPageNote(note, on: image) } else { setFileNote(note, on: image) }
+    }
+
+    /// The notebook's own tags, from the description and the trimmer's file, as for a scan.
+    func notebookOwnTags(_ notebook: Notebook) -> [String] {
+        Tags.merged(descriptionLevel(of: notebook).map(description.tags(at:)), notebookTags(notebook.path))
+    }
+
+    func setNotebookOwnTags(_ tags: [String], of notebook: Notebook) {
+        route(tags, from: notebookOwnTags(notebook), description: descriptionLevel(of: notebook), trimmer: notebookTags(notebook.path)) {
+            setNotebookTags($0, of: notebook.path)
+        }
+    }
+
+    /// One list of tags kept in two files: a removed tag goes from whichever has it, a new one goes to the description
+    /// when there is a part for it, else to the trimmer's file.
+    private func route(
+        _ tags: [String], from old: [String], description level: [String]?, trimmer: [String], setTrimmer: ([String]) -> Void
+    ) {
+        let removed = Set(old).subtracting(tags)
+        let added = tags.filter { !old.contains($0) }
+        guard let level else { return setTrimmer(tags) }
+        let kept = trimmer.filter { !removed.contains($0) }
+        if kept != trimmer { setTrimmer(kept) }
+        let current = description.tags(at: level)
+        let next = Tags.merged(current.filter { !removed.contains($0) }, added)
+        if next != current { setDescription(.tags, next, at: level) }
     }
 
     /// Tags in a notebook's trimmer file for every crop from it: the folder's tags outside a submission.

@@ -24,7 +24,7 @@ Requires macOS 26, on Apple silicon or Intel.
 1. Open a submission's folder (⌘O) or drop it onto the window; a single notebook or any folder of scans works too.
 2. If a page is tilted, press **Wyprostuj automatycznie** (⌘L), or turn it by 0.1° with `[` and `]`.
 3. Drag on a page to draw a box; drag a box to move it, or its handles to resize it.
-4. Describe crops in the panel on the right (⌥⌘I): tags and a note for the selected box (⌘T, ⌘U), its page (⇧⌘T, ⇧⌘U) and its notebook (⌃⌘T).
+4. Describe crops in the panel on the right (⌥⌘I), one level per tab: **Wycinek** for the selected box (⌘T, ⌘U), **Skan RAW** for its scan (⇧⌘T, ⇧⌘U) and **Zeszyt** for its notebook (⌃⌘T).
 5. Press **Eksportuj** (⌘E).
 
 Each notebook keeps the trimmer's work in its own hidden folder, `.trims/`: the boxes in `trims.json` and the crops in `crops/`, named `<page>_001.png`, `<page>_002.png`, …, at the scan's full resolution.
@@ -69,18 +69,18 @@ It watches the folder, so pages and notebooks from `copyisto pull` appear, and a
 In a tag field, Return or a comma adds a tag and Backspace in the empty field removes the last one.
 Tags are lowercase with single spaces, 1 to 50 characters, exactly as the server stores them, and the field shows them that way as you type.
 Suggestions come from the tags already used in the open notebooks and from the server's list: `.copyisto/tags.json`, or in a notebook folder from older CLIs `.tags.copyisto.json`, then `.copyisto-tags.json`; the first that exists is used, and the app only reads it.
-A box shows the tags it inherits greyed out, in the order the CLI joins them: the file's description, the notebook's and the page's tags from the trimmer's file, then its own.
-Its number on the page gets an icon when the box has its own tags or note, and turns into a warning when its crop would have more than 20 tags, which the CLI refuses.
-A crop's note is the file's note from the description, the page note and the box note, one per line, within 2000 characters, counted under each note.
+Each tab edits only its own level, and shows below what it inherits from the levels above, greyed, in the order the CLI joins them: the submission, the notebook, the scan, then the crop.
+A box's number on the page gets an icon when the box has its own tags or note, and turns into a warning when its crop would have more than 20 tags, which the CLI refuses.
+A crop's note is the scan's note and the box note, one per line, within 2000 characters, counted under each note.
 
-In a submission, the panel also edits the shared description, `.copyisto/description.json`, as `copyisto describe` does:
+In a submission's numbered notebook, **Skan RAW** and **Zeszyt** write the shared description, `.copyisto/description.json`, as `copyisto describe` does, so they describe the file in the notebook's RAW as well as every crop from it:
 
-- **Plik w opisie zgłoszenia**: what the scan was taken with (device type, model, dpi), its tags and its note, inherited by its crops.
-- **Zeszyt**: the notebook's tags and its note, which is about the notebook and goes to no crop.
-- **Zgłoszenie**: what is set for the whole submission, shown only; it is changed with `copyisto describe`.
+- **Skan RAW**: what the scan was taken with (device type, model, dpi), its tags and its note.
+- **Zeszyt**: the notebook's tags and its note, which is about the notebook and goes to no crop, and, greyed, what is set for the whole submission with `copyisto describe`.
 
+Elsewhere, in a plain folder or a notebook that has no number until `copyisto push` gives it one, the scan's and the notebook's tags and the scan's note go to the trimmer's file.
+Tags and a note the trimmer's file already has for a scan or a notebook stay in the same list, so nothing is described twice; a new tag goes to the description.
 A file's description is the submission's, then its notebook's, then its own: tags joined, the source field by field, except that another device type starts it over, so a phone photo does not get the scanner's model.
-A notebook without a number has no part in the description until `copyisto push` gives it one, so its fields are disabled until then.
 The app writes only the fields you change, leaves out emptied ones, and keeps every key it does not know and every other notebook's part.
 It reads the file again before each write; if the same field changed there in the meantime, for example by `copyisto pull`, it asks which value to keep.
 Nothing reaches the server until `copyisto push`.

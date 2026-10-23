@@ -337,9 +337,9 @@ private struct NotebookHeader: View {
         .contextMenu {
             Button("Opisz zeszyt") {
                 if let first = notebook.images.first, store.notebook(of: store.current ?? "") != notebook { store.current = first }
-                store.describe(.notebookNote)
+                store.describe(store.number(of: notebook) == nil ? .notebookTags : .notebookNote)
             }
-            .disabled(notebook.images.isEmpty || store.number(of: notebook) == nil)
+            .disabled(notebook.images.isEmpty)
         }
     }
 }

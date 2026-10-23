@@ -100,19 +100,19 @@ struct AppCommands: Commands {
                 .keyboardShortcut(.escape, modifiers: [])
                 .disabled(store.selectedBox == nil || typing)
             Divider()
-            Button("Tagi ramki") { store.describe(.boxTags) }
+            Button("Tagi wycinka") { store.describe(.boxTags) }
                 .keyboardShortcut("t")
                 .disabled(store.selectedBox == nil)
-            Button("Uwaga ramki") { store.describe(.boxNote) }
+            Button("Uwaga wycinka") { store.describe(.boxNote) }
                 .keyboardShortcut("u")
                 .disabled(store.selectedBox == nil)
-            Button("Tagi strony") { store.describe(.pageTags) }
+            Button("Tagi skanu") { store.describe(.scanTags) }
                 .keyboardShortcut("t", modifiers: [.command, .shift])
                 .disabled(store.current == nil)
-            Button("Uwaga strony") { store.describe(.pageNote) }
+            Button("Uwaga skanu") { store.describe(.scanNote) }
                 .keyboardShortcut("u", modifiers: [.command, .shift])
                 .disabled(store.current == nil)
-            Button(store.submission == nil ? "Tagi folderu" : "Tagi zeszytu z trimmera") { store.describe(.folderTags) }
+            Button(store.submission == nil ? "Tagi folderu" : "Tagi zeszytu") { store.describe(.notebookTags) }
                 // ⌥⌘T is the system's Show/Hide Toolbar.
                 .keyboardShortcut("t", modifiers: [.command, .control])
                 .disabled(store.notebooks.isEmpty)

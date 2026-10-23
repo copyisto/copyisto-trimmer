@@ -376,3 +376,39 @@ private func submission(_ code: String, notebooks: [String: [String]], descripti
 private func readJSON(_ url: URL) throws -> [String: Any] {
     try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
 }
+
+// MARK: One list of tags kept in two files
+
+@Test @MainActor func aScansTagsGoToTheDescriptionAndRemoveFromEitherFile() throws {
+    let root = try submission("M4K-V", notebooks: ["01": ["a.png"], "nowy": ["b.png"]], description: sample)
+    let store = Store()
+    store.open(root)
+    store.setPageTags(["z trimmera"], on: "01/a.png")
+    #expect(store.scanTags("01/a.png") == ["z trimmera"])
+    store.setScanTags(["z trimmera", "polifonia"], on: "01/a.png")
+    #expect(store.description.tags(at: Description.file("a.png", in: "01")) == ["polifonia"])
+    #expect(store.pageTags("01/a.png") == ["z trimmera"])
+    store.setScanTags(["polifonia"], on: "01/a.png")
+    #expect(store.pageTags("01/a.png").isEmpty)
+    #expect(store.scanTags("01/a.png") == ["polifonia"])
+
+    // A notebook without a number has no part in the description yet: the trimmer's file holds it all.
+    store.setScanTags(["szkic"], on: "nowy/b.png")
+    store.setScanNote("brudnopis", on: "nowy/b.png")
+    #expect(store.pageTags("nowy/b.png") == ["szkic"] && store.pageNote("nowy/b.png") == "brudnopis")
+    store.setNotebookOwnTags(["zeszyt b"], of: store.notebooks[1])
+    #expect(store.notebookTags("nowy") == ["zeszyt b"])
+    store.setNotebookOwnTags(["szkic", "zeszyt a"], of: store.notebooks[0])
+    #expect(store.description.tags(at: Description.notebook("01")) == ["szkic", "zeszyt a"])
+}
+
+@Test @MainActor func pickingABoxShowsItsCrop() throws {
+    let root = try submission("M4K-V", notebooks: ["01": ["a.png"]])
+    let store = Store()
+    store.open(root)
+    store.inspectorTab = .notebook
+    store.addBox(CGRect(x: 0, y: 0, width: 20, height: 20), on: "01/a.png", imageSize: CGSize(width: 40, height: 40))
+    #expect(store.inspectorTab == .crop)
+    store.describe(.scanNote)
+    #expect(store.inspectorTab == .scan && store.editing == .scanNote)
+}

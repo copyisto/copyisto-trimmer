@@ -94,31 +94,60 @@ import Testing
 @Test func newerTrimsFilesAreRefused() throws {
     let folder = try temporaryFolder()
     try Data(#"{"version": \#(TrimsFile.currentVersion + 1), "images": {}}"#.utf8)
-        .write(to: folder.appending(path: TrimsFile.fileName))
+        .write(to: trimsFile(in: folder))
     #expect(throws: TrimsError.self) { try TrimsFile.load(from: folder) }
 }
 
-@Test func oldNamesAreRenamedButNeverOverANewFile() throws {
-    let folder = try temporaryFolder()
-    try Data(#"{"version": 3, "images": {}}"#.utf8).write(to: folder.appending(path: "copyisto-trims.json"))
-    try FileManager.default.createDirectory(at: folder.appending(path: "copyisto-trims"), withIntermediateDirectories: true)
-    try Data().write(to: folder.appending(path: "copyisto-trims/page_001.json"))
-    try TrimsFile.migrateLegacyNames(in: folder)
-    let names = Set(try FileManager.default.contentsOfDirectory(atPath: folder.path))
-    #expect(names == [TrimsFile.fileName, Exporter.folderName])
-    // Other files in the crops' folder, such as labelme's, move along.
-    #expect(FileManager.default.fileExists(atPath: folder.appending(path: "\(Exporter.folderName)/page_001.json").path))
+@Test func everyLayoutGivesTheSameBoxes() throws {
+    let json = Data(#"{"version": 3, "images": {"a.png": {"width": 10, "height": 10, "boxes": [{"id": 1, "x": 1, "y": 2, "width": 3, "height": 4}]}}}"#.utf8)
+    for name in [".trims/trims.json", "trims.copyisto.json", "copyisto-trims.json"] {
+        let folder = try temporaryFolder()
+        try FileManager.default.createDirectory(at: folder.appending(path: ".trims"), withIntermediateDirectories: true)
+        try json.write(to: folder.appending(path: name))
+        #expect(try TrimsFile.load(from: folder).images["a.png"]?.boxes.first?.rect == CGRect(x: 1, y: 2, width: 3, height: 4))
+    }
+}
 
-    try Data("stare".utf8).write(to: folder.appending(path: "copyisto-trims.json"))
-    try TrimsFile.migrateLegacyNames(in: folder)
-    #expect(try String(contentsOf: folder.appending(path: TrimsFile.fileName), encoding: .utf8).contains("version"))
-    #expect(FileManager.default.fileExists(atPath: folder.appending(path: "copyisto-trims.json").path))
+@Test func anOldLayoutMovesIntoTrimsUnchanged() throws {
+    for (file, crops) in TrimsLocation.legacyNames {
+        let folder = try temporaryFolder()
+        let bytes = Data("{\n  \"version\" : 2,\n  \"images\" : {}\n}".utf8)
+        try bytes.write(to: folder.appending(path: file))
+        try FileManager.default.createDirectory(at: folder.appending(path: crops), withIntermediateDirectories: true)
+        // Other files in the crops' folder, such as labelme's, move along.
+        try Data("labelme".utf8).write(to: folder.appending(path: "\(crops)/page_001.json"))
+        try Data().write(to: folder.appending(path: "page.png"))
+        TrimsLocation.migrate(in: folder)
+        #expect(Set(try FileManager.default.contentsOfDirectory(atPath: folder.path)) == [".trims", "page.png"])
+        #expect(try Data(contentsOf: TrimsLocation.file(in: folder)) == bytes)
+        #expect(try Data(contentsOf: TrimsLocation.crops(in: folder).appending(path: "page_001.json")) == Data("labelme".utf8))
+        #expect(TrimsLocation.leftovers(in: folder).isEmpty)
+    }
+}
+
+@Test func withBothLayoutsTrimsWinsAndTheOldOnesStay() throws {
+    let folder = try temporaryFolder()
+    try TrimsFile(tags: ["nowy"]).save(to: folder)
+    try Data(#"{"version": 3, "tags": ["stary"], "images": {}}"#.utf8).write(to: folder.appending(path: "trims.copyisto.json"))
+    try FileManager.default.createDirectory(at: folder.appending(path: "trims.copyisto"), withIntermediateDirectories: true)
+    let before = try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted()
+    TrimsLocation.migrate(in: folder)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted() == before)
+    #expect(try TrimsFile.load(from: folder).tags == ["nowy"])
+    #expect(TrimsLocation.leftovers(in: folder) == ["trims.copyisto.json", "trims.copyisto"])
+}
+
+@Test func savingMakesTrimsInAFreshFolder() throws {
+    let folder = try temporaryFolder()
+    try TrimsFile(tags: ["a"]).save(to: folder)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == [".trims"])
+    #expect(try TrimsFile.load(from: folder).tags == ["a"])
 }
 
 @Test func version1FilesStillLoad() throws {
     let folder = try temporaryFolder()
     let json = #"{"version": 1, "images": {"a.png": {"width": 10, "height": 20, "nextId": 3, "boxes": []}}}"#
-    try Data(json.utf8).write(to: folder.appending(path: TrimsFile.fileName))
+    try Data(json.utf8).write(to: trimsFile(in: folder))
     let page = try #require(try TrimsFile.load(from: folder).images["a.png"])
     #expect(page.size == CGSize(width: 10, height: 20) && page.rotation == nil)
 }
@@ -126,7 +155,7 @@ import Testing
 @Test func version2FilesLoadWithoutTagsAndSaveAsVersion3() throws {
     let folder = try temporaryFolder()
     let json = #"{"version": 2, "images": {"a.png": {"width": 10, "height": 20, "rotation": 0.4, "boxes": [{"id": 1, "x": 0, "y": 0, "width": 5, "height": 5}]}}}"#
-    let url = folder.appending(path: TrimsFile.fileName)
+    let url = try trimsFile(in: folder)
     try Data(json.utf8).write(to: url)
     let file = try TrimsFile.load(from: folder)
     let page = try #require(file.images["a.png"])
@@ -150,7 +179,7 @@ import Testing
     file.images["skan 1.png"] = page
     try file.save(to: folder)
     #expect(try TrimsFile.load(from: folder) == file)
-    let json = try String(contentsOf: folder.appending(path: TrimsFile.fileName), encoding: .utf8)
+    let json = try String(contentsOf: TrimsLocation.file(in: folder), encoding: .utf8)
     // The second box has neither, and the file says so by leaving the keys out, not with [] or "".
     #expect(json.components(separatedBy: "\"tags\"").count - 1 == 3)
     #expect(json.components(separatedBy: "\"note\"").count - 1 == 2)
@@ -232,7 +261,7 @@ import Testing
     page.rotation = 90
     _ = try await Exporter.run(folder: folder, images: ["page.png"], trims: ["page.png": page], format: .png) { _, _ in }
 
-    let output = folder.appending(path: Exporter.folderName)
+    let output = TrimsLocation.crops(in: folder)
     let red = try #require(loadImage(output.appending(path: "page_001.png")))
     let blue = try #require(loadImage(output.appending(path: "page_002.png")))
     #expect(red.width == 40 && red.height == 40)
@@ -258,7 +287,7 @@ import Testing
     try writePNG(width: 100, height: 80, to: folder.appending(path: "page.png")) { x, y in
         y >= 40 ? (0, 255, 0) : x < 50 ? (255, 0, 0) : (0, 0, 255)
     }
-    let output = folder.appending(path: Exporter.folderName)
+    let output = TrimsLocation.crops(in: folder)
     try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
     for leftover in ["page_009.png", "page_009.json"] {
         try Data().write(to: output.appending(path: leftover))
@@ -285,6 +314,12 @@ import Testing
 }
 
 // MARK: Helpers
+
+/// `.trims/trims.json`, with its folder made, for writing a file by hand.
+func trimsFile(in folder: URL) throws -> URL {
+    try FileManager.default.createDirectory(at: folder.appending(path: TrimsLocation.folder), withIntermediateDirectories: true)
+    return TrimsLocation.file(in: folder)
+}
 
 func temporaryFolder() throws -> URL {
     let url = FileManager.default.temporaryDirectory.appending(path: "copyisto-trimmer-tests-\(UUID().uuidString)")

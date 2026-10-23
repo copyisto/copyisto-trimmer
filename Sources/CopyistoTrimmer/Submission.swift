@@ -98,9 +98,11 @@ struct Description {
     static func notebook(_ number: String) -> [String] { ["notebooks", number] }
     static func file(_ name: String, in number: String) -> [String] { ["notebooks", number, "files", canonical(name)] }
 
-    /// The trimmer's file under its old name is the same file: `canonicalPath` in shared/description.ts.
+    /// The trimmer's file is one file whatever the folder calls it: the description knows it by its name in the RAW
+    /// (`canonicalPath` in shared/description.ts).
     static func canonical(_ path: String) -> String {
-        path == "copyisto-trims.json" ? TrimsFile.fileName : path
+        let names = TrimsLocation.legacyNames.map(\.0) + ["\(TrimsLocation.folder)/\(TrimsLocation.file)"]
+        return names.contains(path) ? TrimsLocation.rawName : path
     }
 
     func value(at path: [String]) -> Any? {

@@ -42,6 +42,11 @@ struct AppCommands: Commands {
                 .keyboardShortcut("o")
             Button("Copyisto Labs: pobierz albo wyślij…") { store.showsLabs = true }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
+            Divider()
+            // The crops are in a hidden folder, which Finder does not show on its own.
+            Button("Pokaż wycinki w Finderze") { store.revealCrops() }
+                .keyboardShortcut("e", modifiers: [.command, .option])
+                .disabled(!store.hasCrops)
         }
         CommandGroup(replacing: .undoRedo) {
             Button("Cofnij") { store.undo() }

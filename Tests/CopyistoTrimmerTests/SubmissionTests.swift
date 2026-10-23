@@ -43,6 +43,31 @@ import Testing
     #expect(store.descriptionLevel(of: "x.png") == nil)
 }
 
+@Test @MainActor func scansNeverIncludeTheTrimmersFolder() async throws {
+    let root = try submission("M4K-V", notebooks: ["01": ["a.png"]])
+    let store = Store()
+    store.open(root)
+    store.addBox(CGRect(x: 0, y: 0, width: 20, height: 20), on: "01/a.png", imageSize: CGSize(width: 40, height: 40))
+    #expect(await store.export())
+    store.reload()
+    #expect(store.images == ["01/a.png"] && store.notebooks.map(\.name) == ["01"])
+    #expect(try FileManager.default.contentsOfDirectory(atPath: root.appending(path: "01").path).sorted() == [".trims", "a.png"])
+}
+
+@Test @MainActor func openingAnOldNotebookMovesItsFilesAndFlagsLeftovers() throws {
+    let root = try submission("M4K-V", notebooks: ["01": ["a.png"], "02": ["b.png"]])
+    let json = Data(#"{"version": 3, "images": {"a.png": {"width": 40, "height": 40, "boxes": [{"id": 1, "x": 0, "y": 0, "width": 20, "height": 20}]}}}"#.utf8)
+    try json.write(to: root.appending(path: "01/trims.copyisto.json"))
+    try TrimsFile(tags: ["nowy"]).save(to: root.appending(path: "02"))
+    try json.write(to: root.appending(path: "02/copyisto-trims.json"))
+    let store = Store()
+    store.open(root)
+    #expect(try Data(contentsOf: TrimsLocation.file(in: root.appending(path: "01"))) == json)
+    #expect(store.boxes(for: "01/a.png").count == 1)
+    #expect(store.notebookTags("02") == ["nowy"])
+    #expect(store.leftovers == ["02/copyisto-trims.json"])
+}
+
 @Test @MainActor func aPlainFolderOpensAsBefore() throws {
     let folder = try temporaryFolder()
     try writePNG(width: 8, height: 8, to: folder.appending(path: "a.png")) { _, _ in (0, 0, 0) }
@@ -85,12 +110,15 @@ import Testing
     let new = try TrimsFile.load(from: root.appending(path: "nowy"))
     #expect(first.images["skan_001.png"]?.boxes.first?.width == 20)
     #expect(new.images["skan_001.png"]?.boxes.first?.width == 25)
-    #expect(!FileManager.default.fileExists(atPath: root.appending(path: TrimsFile.fileName).path))
+    #expect(!FileManager.default.fileExists(atPath: root.appending(path: TrimsLocation.folder).path))
+    for notebook in ["01", "nowy"] {
+        #expect(FileManager.default.fileExists(atPath: TrimsLocation.file(in: root.appending(path: notebook)).path))
+    }
 
     #expect(await store.export())
     #expect(store.exportSummary?.notebooks == ["M4K-V-01", "nowy: nowy zeszyt"])
     for notebook in ["01", "nowy"] {
-        let crops = try FileManager.default.contentsOfDirectory(atPath: root.appending(path: "\(notebook)/\(Exporter.folderName)").path)
+        let crops = try FileManager.default.contentsOfDirectory(atPath: TrimsLocation.crops(in: root.appending(path: notebook)).path)
         #expect(crops == ["skan_001_001.png"])
     }
 
@@ -103,7 +131,7 @@ import Testing
     #expect(await store.export())
     #expect(store.exportSummary?.notebooks == ["M4K-V-01"])
     // A crop deleted by hand is cut again.
-    try FileManager.default.removeItem(at: root.appending(path: "nowy/\(Exporter.folderName)/skan_001_001.png"))
+    try FileManager.default.removeItem(at: TrimsLocation.crops(in: root.appending(path: "nowy")).appending(path: "skan_001_001.png"))
     #expect(await store.export())
     #expect(store.exportSummary?.notebooks == ["nowy: nowy zeszyt"])
 }
@@ -195,8 +223,9 @@ private var sample: [String: Any] { [
 
 @Test func theTrimmerFilesOldNameIsTheSameFile() {
     let description = Description(json: sample)
-    #expect(description.meta(of: TrimsFile.fileName, in: "01").tags.last == "plik trimmera")
-    #expect(description.meta(of: "copyisto-trims.json", in: "01").tags.last == "plik trimmera")
+    for name in [".trims/trims.json", "trims.copyisto.json", "copyisto-trims.json"] {
+        #expect(description.meta(of: name, in: "01").tags.last == "plik trimmera")
+    }
 }
 
 // MARK: Editing the description

@@ -37,18 +37,17 @@ enum ExportError: LocalizedError {
 }
 
 enum Exporter {
-    static let folderName = "trims.copyisto"
     // ponytail: a 600 dpi page decodes to ~140 MB, so cap parallel pages; raise if exports feel slow
     static let maxConcurrentPages = 4
 
-    /// Writes every box as its own file into `<folder>/trims.copyisto/`, then removes crops whose box is gone.
+    /// Writes every box as its own file into `<folder>/.trims/crops/`, then removes crops whose box is gone.
     /// Removal only happens after every page succeeded, so a failed export never deletes anything.
     @concurrent
     static func run(
         folder: URL, images: [String], trims: [String: ImageTrims], format: ExportFormat,
         progress: @MainActor @Sendable (Int, Int) -> Void
     ) async throws -> ExportSummary {
-        let output = folder.appending(path: folderName)
+        let output = TrimsLocation.crops(in: folder)
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
 
         let jobs = images.compactMap { image -> ExportJob? in

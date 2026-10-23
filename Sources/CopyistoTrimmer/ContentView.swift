@@ -85,13 +85,25 @@ struct ContentView: View {
     private func exportMessage(_ summary: ExportSummary) -> String {
         guard !summary.notebooks.isEmpty else { return "Od ostatniego eksportu żadna ramka się nie zmieniła." }
         let what = "Wyeksportowano \(plural(summary.crops, "wycinek", "wycinki", "wycinków")) z \(plural(summary.images, "zdjęcia", "zdjęć", "zdjęć"))"
-        guard store.submission != nil else { return "\(what) do folderu \(Exporter.folderName)." }
-        return "\(what) do \(Exporter.folderName) w zeszytach: \(summary.notebooks.joined(separator: ", "))."
+        guard store.submission != nil else { return "\(what)." }
+        return "\(what) w zeszytach: \(summary.notebooks.joined(separator: ", "))."
     }
 
     private var sidebar: some View {
         @Bindable var store = store
         return List(selection: $store.current) {
+            if !store.leftovers.isEmpty {
+                Label {
+                    Text("Stary plik trimmera, którego trimmer już nie używa: \(store.leftovers.joined(separator: ", ")).")
+                        .lineLimit(4)
+                } icon: {
+                    Image(systemName: "info.circle").foregroundStyle(Theme.muted)
+                }
+                .font(Theme.text(11))
+                .foregroundStyle(Theme.muted)
+                .selectionDisabled()
+                .help("Ramki są w ukrytym folderze .trims. Stary plik można usunąć albo zostawić; ani trimmer, ani copyisto go nie czyta.")
+            }
             if !store.strayFiles.isEmpty {
                 Label {
                     Text("Pliki poza zeszytami: \(store.strayFiles.joined(separator: ", ")) – przenieś je do folderu zeszytu.")
@@ -248,7 +260,7 @@ struct ContentView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(store.totalBoxes == 0)
-                .help("Zapisz boxy jako osobne pliki w \(Exporter.folderName) każdego zeszytu, w którym się zmieniły (⌘E)")
+                .help("Zapisz boxy jako osobne pliki w każdym zeszycie, w którym się zmieniły (⌘E)")
             }
         }
         ToolbarItem {

@@ -27,12 +27,15 @@ Requires macOS 26, on Apple silicon or Intel.
 4. Describe crops in the panel on the right (⌥⌘I): tags and a note for the selected box (⌘T, ⌘U), its page (⇧⌘T, ⇧⌘U) and its notebook (⌃⌘T).
 5. Press **Eksportuj** (⌘E).
 
-Each notebook keeps its boxes in its own `trims.copyisto.json` and gets its crops in its own `trims.copyisto/`, named `<page>_001.png`, `<page>_002.png`, …, at the scan's full resolution.
+Each notebook keeps the trimmer's work in its own hidden folder, `.trims/`: the boxes in `trims.json` and the crops in `crops/`, named `<page>_001.png`, `<page>_002.png`, …, at the scan's full resolution.
+Hidden, so Finder shows only the scans, and selecting them all (⌘A) never takes the boxes or crops along.
+**Pokaż wycinki w Finderze** (⌥⌘E) opens the crops of the current notebook.
 Crops of a turned page are cut from the turned page, so the staff lines in them come out level.
 Boxes are saved as you go, so you can close the app and carry on later; it reopens the last folder on the page you left.
 Export cuts only the notebooks whose boxes changed since their last export, and says which.
 Every action is a toolbar button, with its shortcut in the tooltip.
-The `.copyisto` suffix marks Copyisto's files; files named `copyisto-trims.json` and folders named `copyisto-trims/` by older builds are renamed when a folder opens.
+A folder cut with an older build, with `trims.copyisto.json` and `trims.copyisto/` (or `copyisto-trims.json` and `copyisto-trims/`) next to the scans, is moved into `.trims/` unchanged when it opens.
+If it has `.trims/trims.json` already, the old files are left alone and the list says they are no longer used.
 
 Export PNG: the dataset wants lossless crops, and the app warns while JPG is selected.
 
@@ -51,7 +54,7 @@ copyisto push
 ```
 M4K-V/
   .copyisto/            the CLI's state, the description (description.json) and the tags in use (tags.json)
-  01/                   notebook M4K-V-01: scans, trims.copyisto.json, trims.copyisto/
+  01/                   notebook M4K-V-01: scans, and .trims/ with trims.json and crops/
   nowy/                 a new notebook; copyisto push gives it a number and renames the folder
 ```
 
@@ -66,7 +69,7 @@ It watches the folder, so pages and notebooks from `copyisto pull` appear, and a
 In a tag field, Return or a comma adds a tag and Backspace in the empty field removes the last one.
 Tags are lowercase with single spaces, 1 to 50 characters, exactly as the server stores them, and the field shows them that way as you type.
 Suggestions come from the tags already used in the open notebooks and from the server's list: `.copyisto/tags.json`, or in a notebook folder from older CLIs `.tags.copyisto.json`, then `.copyisto-tags.json`; the first that exists is used, and the app only reads it.
-A box shows the tags it inherits greyed out, in the order the CLI joins them: the file's description, the notebook's and the page's tags from `trims.copyisto.json`, then its own.
+A box shows the tags it inherits greyed out, in the order the CLI joins them: the file's description, the notebook's and the page's tags from the trimmer's file, then its own.
 Its number on the page gets an icon when the box has its own tags or note, and turns into a warning when its crop would have more than 20 tags, which the CLI refuses.
 A crop's note is the file's note from the description, the page note and the box note, one per line, within 2000 characters, counted under each note.
 
@@ -126,7 +129,8 @@ Signing needs these repository secrets; without them the build is ad hoc signed 
 
 ## How it works
 
-`trims.copyisto.json` stores a notebook's boxes in pixels of the original scan, like labelme:
+`copyisto push` sends `.trims/trims.json` to the notebook's RAW, where it is called `trims.copyisto.json`, as is its key in the description.
+It stores a notebook's boxes in pixels of the original scan, like labelme:
 
 ```json
 {
@@ -153,7 +157,7 @@ Straightening finds the angle by projection profile, the deskew method of Lepton
 Empty tags and notes are left out, as `rotation` is on a level page.
 Every new field bumps `version`, because a build that does not know a field would drop it on save; older builds refuse newer files instead.
 Boxes are numbered in the order they were drawn, and deleting one renumbers the rest, so label crops only once a page's boxes are final.
-Each export of a notebook rewrites its crops and removes its own crops whose box is gone; other files in `trims.copyisto/` are left alone.
+Each export of a notebook rewrites its crops and removes its own crops whose box is gone; other files in `.trims/crops/` are left alone.
 The app has no dependencies beyond the macOS SDK and makes no network requests itself; Copyisto Labs goes through the `copyisto` CLI.
 
 ## Licence

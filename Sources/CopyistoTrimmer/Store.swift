@@ -3,7 +3,7 @@ import CryptoKit
 import ImageIO
 import Observation
 
-/// One folder of scans, with its own `trims.copyisto.json` and `trims.copyisto/`.
+/// One folder of scans, with its own `.trims/` for its boxes and crops.
 struct Notebook: Equatable, Identifiable {
     /// Relative to the opened folder: `01`, or empty when the opened folder is the notebook itself.
     let path: String
@@ -33,6 +33,8 @@ final class Store {
     private(set) var description = Description()
     /// Files at the top of a submission, which belong to no notebook, so neither the CLI nor the app uses them.
     private(set) var strayFiles: [String] = []
+    /// Old trimmer files left beside a notebook's `.trims/`, which nothing uses any more, e.g. `01/trims.copyisto.json`.
+    private(set) var leftovers: [String] = []
     var current: String? {
         didSet {
             guard current != oldValue else { return }
@@ -110,6 +112,7 @@ final class Store {
         var notebooks: [Notebook] = []
         var trims: [String: TrimsFile] = [:]
         var strayFiles: [String] = []
+        var leftovers: [String] = []
     }
 
     /// Opens a submission, a notebook or any folder of scans; a dropped file opens its folder with that file selected.
@@ -215,8 +218,8 @@ final class Store {
         if isRoot {
             let entries = try FileManager.default.contentsOfDirectory(
                 at: folder, includingPropertiesForKeys: [.isDirectoryKey], options: .skipsHiddenFiles)
-            // A trimmer folder left at the top by mistake is no notebook.
-            let ignored: Set = [Exporter.folderName, "copyisto-trims"]
+            // An old layout's crops folder left at the top by mistake is no notebook.
+            let ignored = Set(TrimsLocation.legacyNames.map(\.1))
             let names = entries.filter(isDirectory).map(\.lastPathComponent).filter { !ignored.contains($0) }
                 .sorted(by: Submission.notebookOrder)
             contents.strayFiles = entries.filter { !isDirectory($0) }.map(\.lastPathComponent)
@@ -232,8 +235,9 @@ final class Store {
 
     private func load(_ url: URL, path: String, name: String, into contents: inout Contents, migrating: Bool) throws {
         do {
-            if migrating { try TrimsFile.migrateLegacyNames(in: url) }
+            if migrating { TrimsLocation.migrate(in: url) }
             contents.trims[path] = try TrimsFile.load(from: url)
+            contents.leftovers += TrimsLocation.leftovers(in: url).map { join(path, $0) }
             let images = try listImages(in: url).map { join(path, $0) }
             contents.notebooks.append(Notebook(path: path, name: name, images: images))
         } catch where !path.isEmpty {
@@ -245,6 +249,7 @@ final class Store {
         notebooks = contents.notebooks
         trims = contents.trims
         strayFiles = contents.strayFiles
+        leftovers = contents.leftovers
         images = contents.notebooks.flatMap(\.images)
     }
 
@@ -473,7 +478,7 @@ final class Store {
         editing = field
     }
 
-    /// Tags in a notebook's `trims.copyisto.json` for every crop from it: the folder's tags outside a submission.
+    /// Tags in a notebook's trimmer file for every crop from it: the folder's tags outside a submission.
     func notebookTags(_ notebook: String) -> [String] { trims[notebook]?.tags ?? [] }
 
     func setNotebookTags(_ tags: [String], of notebook: String) {
@@ -522,7 +527,7 @@ final class Store {
     }
 
     /// Tags a crop from this page gets before the box's own: the file's description, then the notebook's and the page's
-    /// in `trims.copyisto.json`, in the order `copyisto push` joins them.
+    /// in its trimmer file, in the order `copyisto push` joins them.
     func inheritedTags(of image: String) -> [String] {
         Tags.merged(meta(of: image).tags, notebookTags(notebookPath(of: image)), pageTags(image))
     }
@@ -672,7 +677,7 @@ final class Store {
                 // Renamed under us; the reload that follows saves it in the new place.
                 unsaved.insert(path)
             } catch {
-                self.error = "Nie udało się zapisać \(TrimsFile.fileName): \(error.localizedDescription)"
+                self.error = "Nie udało się zapisać ramek: \(error.localizedDescription)"
             }
         }
     }
@@ -681,7 +686,7 @@ final class Store {
 
     var isExporting: Bool { exportProgress != nil }
 
-    /// Exports every notebook whose boxes changed since its last export, each into its own `trims.copyisto/`.
+    /// Exports every notebook whose boxes changed since its last export, each into its own `.trims/crops/`.
     /// `announce` shows the summary; a push exports first and reports its own outcome instead.
     @discardableResult
     func export(announce: Bool = true) async -> Bool {
@@ -719,7 +724,7 @@ final class Store {
     }
 
     /// True when the notebook's crops are not what its boxes would cut now: boxes moved since the last export,
-    /// another format, or crops missing or left over in its `trims.copyisto/`.
+    /// another format, or crops missing or left over in its `.trims/crops/`.
     func needsExport(_ notebook: Notebook) -> Bool {
         let file = trims[notebook.path] ?? TrimsFile()
         let names = notebook.images.map(fileName(of:))
@@ -730,7 +735,7 @@ final class Store {
                     ? cropFileName(image: name, number: index + 1, format: format) : nil
             }
         })
-        let output = notebookURL(notebook.path).appending(path: Exporter.folderName)
+        let output = TrimsLocation.crops(in: notebookURL(notebook.path))
         let listed = (try? FileManager.default.contentsOfDirectory(atPath: output.path)) ?? []
         let existing = Set(staleCrops(in: listed, images: names, keep: []))
         if expected.isEmpty, existing.isEmpty { return false }
@@ -756,8 +761,31 @@ final class Store {
     }
 
     func revealExport() {
-        guard let folders = exportSummary?.folders, !folders.isEmpty else { return }
-        NSWorkspace.shared.activateFileViewerSelecting(folders)
+        revealCrops(in: exportSummary?.folders ?? [])
+    }
+
+    /// The crops of the current page's notebook, or of every notebook; their folder is hidden, so this is the way in.
+    func revealCrops() {
+        let notebooks = current.flatMap(notebook(of:)).map { [$0] } ?? notebooks
+        revealCrops(in: notebooks.map { TrimsLocation.crops(in: notebookURL($0.path)) })
+    }
+
+    var hasCrops: Bool {
+        notebooks.contains { FileManager.default.fileExists(atPath: TrimsLocation.crops(in: notebookURL($0.path)).path) }
+    }
+
+    /// Selecting a crop opens Finder inside the hidden folder, where selecting the folder itself would show nothing.
+    private func revealCrops(in folders: [URL]) {
+        let files = FileManager.default
+        let shown = folders.compactMap { folder -> URL? in
+            let crops = (try? files.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
+            return crops.min { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+        }
+        if shown.isEmpty, let folder = folders.first(where: { files.fileExists(atPath: $0.path) }) {
+            NSWorkspace.shared.open(folder)
+        } else if !shown.isEmpty {
+            NSWorkspace.shared.activateFileViewerSelecting(shown)
+        }
     }
 }
 

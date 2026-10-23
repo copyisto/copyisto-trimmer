@@ -1,10 +1,9 @@
 import Foundation
-import ImageIO
 import Observation
 
 /// Copyisto Labs through the `copyisto` command line tool, run as a child process.
 /// The app itself still makes no network requests: the login, the server and the git-like checks
-/// (a pull never overwrites local work, a push refuses a notebook changed on the server) all stay in the CLI.
+/// (a pull never overwrites local work, a push asks before replacing other people's changes) all stay in the CLI.
 @MainActor @Observable
 final class Labs {
     enum Account: Equatable {
@@ -22,10 +21,10 @@ final class Labs {
     private(set) var running: String?
     private var process: Process?
 
-    /// Where the pulled notebooks go, one folder each, as in the CLI's own examples.
+    /// Where pulled submissions go, one folder each, as in the CLI's own examples.
     static let root = FileManager.default.homeDirectoryForCurrentUser.appending(path: "Trimmer", directoryHint: .isDirectory)
 
-    /// An app opened from Finder gets a bare PATH, so the places a Bun install or Homebrew puts tools are added.
+    /// The app opened from Finder gets a bare PATH, so the places a Bun install or Homebrew puts tools are added.
     /// The CLI from a checkout is a `#!/usr/bin/env bun` script, so bun must be found on the same PATH.
     private static var searchPath: [String] {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
@@ -50,57 +49,63 @@ final class Labs {
         await checkAccount()
     }
 
-    /// `copyisto raw pull`: the notebook's scans and earlier boxes into `~/Trimmer/<code>`; local changes are kept.
-    func pull(_ code: String) async -> URL? {
-        let folder = Self.root.appending(path: code, directoryHint: .isDirectory)
-        // The CLI makes the folder itself, so a mistyped code leaves no empty one behind.
-        guard let result = await run("Pobieranie \(code)", ["raw", "pull", code, folder.path]), result.status == 0
-        else { return nil }
+    /// The submission and the notebook a typed code names: `M4K-V`, or `M4K-V-01` for that notebook only.
+    static func parse(_ text: String) -> (submission: String, notebook: String?)? {
+        let code = text.trimmingCharacters(in: .whitespaces).uppercased()
+        guard let match = code.wholeMatch(of: /([A-Z0-9]+-[A-Z0-9])(?:-(\d{2,3}))?/) else { return nil }
+        return (String(match.1), match.2.map(String.init))
+    }
+
+    /// `copyisto init` the first time, then `copyisto pull`: the submission into `~/Trimmer/<code>`, as a git clone.
+    /// Local changes are kept; the CLI reports what it left alone.
+    func pull(_ submission: String, notebook: String?) async -> URL? {
+        let folder = Self.root.appending(path: submission, directoryHint: .isDirectory)
+        let isNew = Submission.of(folder)?.isRoot != true
+        if isNew {
+            // A folder from before submissions were repositories holds one notebook's files at the top,
+            // which init would leave outside every notebook.
+            let existing = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+            if !existing.isEmpty {
+                log = ["\(folder.path) już istnieje i nie jest folderem zgłoszenia. Przenieś go albo zmień jego nazwę, a potem pobierz ponownie."]
+                return nil
+            }
+            // The CLI makes the folder itself, so a mistyped code leaves no empty one behind.
+            guard await run("Pobieranie \(submission)", ["init", submission, folder.path])?.status == 0 else { return nil }
+        }
+        let title = "Pobieranie \(notebook.map { "\(submission)-\($0)" } ?? submission)"
+        guard await run(title, ["pull"] + (notebook.map { [$0] } ?? []), in: folder, keepingLog: isNew)?.status == 0 else { return nil }
         return folder
     }
 
-    /// `copyisto trims push`: the exported crops become the notebook's pages.
-    /// A folder that is not a notebook's yet starts a new notebook in `submission`.
-    func push(_ folder: URL, newIn submission: String?, deviceType: DeviceType) async -> Bool {
-        var arguments = ["trims", "push", folder.path]
-        if let submission {
-            arguments += ["--id", submission, "--device-type", deviceType.rawValue]
-            if let dpi = Self.dpi(in: folder) { arguments += ["--dpi", String(dpi)] }
-        }
-        return await run("Wysyłanie", arguments)?.status == 0
+    /// `copyisto pull` in an open submission.
+    func pull(in submission: Submission) async -> Bool {
+        await run("Pobieranie zmian", ["pull"], in: submission.root)?.status == 0
+    }
+
+    enum PushResult {
+        case sent, failed
+        /// The CLI lists what it would ask about (a new notebook, files leaving the RAW, other people's versions
+        /// replaced) and stops, since nobody can answer without a terminal; `--force` is the answer yes.
+        case needsConfirmation
+    }
+
+    /// `copyisto push`: the RAW, the description and the exported crops, of `notebooks` or of every notebook.
+    func push(in submission: Submission, notebooks: [String], force: Bool) async -> PushResult {
+        let arguments = ["push"] + notebooks + (force ? ["--force"] : [])
+        guard let result = await run(force ? "Wysyłanie po potwierdzeniu" : "Wysyłanie", arguments, in: submission.root) else { return .failed }
+        if result.status == 0 { return .sent }
+        return result.lines.contains { $0.contains("Nie ma kogo zapytać") } ? .needsConfirmation : .failed
     }
 
     func cancel() {
         process?.terminate()
     }
 
-    /// The notebook a folder belongs to, from the CLI's own files there (read only, never written).
-    static func notebook(of folder: URL) -> String? {
-        struct Origin: Decodable { let package_id: String }
-        struct Upload: Decodable { let package: Origin? }
-        let read = { (name: String) in try? Data(contentsOf: folder.appending(path: name)) }
-        if let data = read(".copyisto-origin.json"), let origin = try? JSONDecoder().decode(Origin.self, from: data) {
-            return origin.package_id
-        }
-        if let data = read(".copyisto-upload.json"), let upload = try? JSONDecoder().decode(Upload.self, from: data) {
-            return upload.package?.package_id
-        }
-        return nil
-    }
-
-    /// The scans' resolution, for a new notebook's page description; pages from a pulled RAW carry their own.
-    static func dpi(in folder: URL) -> Int? {
-        let files = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
-        let image = files.sorted().first { Store.imageExtensions.contains(($0 as NSString).pathExtension.lowercased()) }
-        guard let image, let source = CGImageSourceCreateWithURL(folder.appending(path: image) as CFURL, nil),
-            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-            let dpi = properties[kCGImagePropertyDPIWidth] as? Double, dpi > 72
-        else { return nil }
-        return Int(dpi.rounded())
-    }
-
     /// Runs the tool and collects its output; a title shows the command in the sheet with its log, nil runs it quietly.
-    private func run(_ title: String?, _ arguments: [String]) async -> (status: Int32, lines: [String])? {
+    /// The CLI finds the submission from its working directory, as git does.
+    private func run(
+        _ title: String?, _ arguments: [String], in directory: URL? = nil, keepingLog: Bool = false
+    ) async -> (status: Int32, lines: [String])? {
         guard running == nil else { return nil }
         guard let tool = Self.executable() else {
             account = .missing
@@ -117,10 +122,11 @@ final class Labs {
         process.standardOutput = pipe
         process.standardError = pipe
         process.standardInput = FileHandle.nullDevice
+        if let directory { process.currentDirectoryURL = directory }
 
         if let title {
             running = title
-            log = []
+            if !keepingLog { log = [] }
         }
         self.process = process
         defer {
@@ -147,18 +153,6 @@ final class Labs {
             reader.cancel()
             log.append("Nie udało się uruchomić \(tool.path): \(error.localizedDescription)")
             return nil
-        }
-    }
-}
-
-enum DeviceType: String, CaseIterable {
-    case scanner, camera, other
-
-    var label: String {
-        switch self {
-        case .scanner: "Skaner"
-        case .camera: "Aparat"
-        case .other: "Inne"
         }
     }
 }

@@ -107,10 +107,10 @@ struct AppCommands: Commands {
             Button("Uwaga strony") { store.describe(.pageNote) }
                 .keyboardShortcut("u", modifiers: [.command, .shift])
                 .disabled(store.current == nil)
-            Button("Tagi folderu") { store.describe(.folderTags) }
+            Button(store.submission == nil ? "Tagi folderu" : "Tagi zeszytu z trimmera") { store.describe(.folderTags) }
                 // ⌥⌘T is the system's Show/Hide Toolbar.
                 .keyboardShortcut("t", modifiers: [.command, .control])
-                .disabled(store.folder == nil)
+                .disabled(store.notebooks.isEmpty)
             Divider()
             Button("Eksportuj") { Task { await store.export() } }
                 .keyboardShortcut("e")

@@ -1,13 +1,12 @@
 import SwiftUI
 
-/// Pull a notebook to cut and push the crops back, without the terminal; the `copyisto` CLI does the work.
+/// Pull a submission to cut and push the work back, without the terminal; the `copyisto` CLI does the work.
 struct LabsSheet: View {
     @Environment(Store.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var pullCode = ""
-    @State private var submission = ""
-    @State private var deviceType = DeviceType.scanner
     @State private var pushed = false
+    @State private var awaitingConfirmation = false
 
     private var labs: Labs { store.labs }
     private var signedIn: Bool { if case .signedIn = labs.account { true } else { false } }
@@ -23,7 +22,14 @@ struct LabsSheet: View {
             pullSection
             if let folder = store.folder {
                 Divider()
-                pushSection(folder)
+                if let submission = store.submission {
+                    submissionSection(submission)
+                } else {
+                    Text("„\(folder.lastPathComponent)” nie jest folderem zgłoszenia, więc nie ma dokąd go wysłać. Pobierz zgłoszenie powyżej i przenieś skany do folderu jego zeszytu, np. nowy/.")
+                        .font(Theme.text(12))
+                        .foregroundStyle(Theme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             if labs.running != nil || !labs.log.isEmpty {
                 output
@@ -71,55 +77,55 @@ struct LabsSheet: View {
     }
 
     private var pullSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Pobierz zeszyt do cięcia").font(Theme.text(13, weight: .semibold))
+        let code = Labs.parse(pullCode)
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("Pobierz zgłoszenie do cięcia").font(Theme.text(13, weight: .semibold))
             HStack {
-                TextField("Zeszyt albo zgłoszenie, np. M4K-V-01", text: $pullCode)
+                TextField("Kod zgłoszenia albo zeszytu, np. M4K-V albo M4K-V-01", text: $pullCode)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(pull)
                 Button("Pobierz", action: pull)
-                    .disabled(!signedIn || busy || code(pullCode) == nil)
+                    .disabled(!signedIn || busy || code == nil)
             }
-            Text("Do ~/Trimmer/\(code(pullCode) ?? "<kod>"), potem folder otworzy się tutaj. Twoich niewysłanych zmian pobieranie nie nadpisze.")
+            Text("Do ~/Trimmer/\(code?.submission ?? "<kod>") (copyisto init, potem copyisto pull), potem folder otworzy się tutaj. Twoich niewysłanych zmian pobieranie nie nadpisze.")
                 .font(Theme.text(11))
                 .foregroundStyle(Theme.muted)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    private func pushSection(_ folder: URL) -> some View {
-        let notebook = Labs.notebook(of: folder)
-        let target = notebook == nil ? code(submission) : nil
-        return VStack(alignment: .leading, spacing: 8) {
-            Text("Wyślij wycinki").font(Theme.text(13, weight: .semibold))
-            if let notebook {
-                Text("„\(folder.lastPathComponent)” to zeszyt \(notebook): wycinki zastąpią jego strony, a niezmienione ramki zachowają swoje.")
-                    .font(Theme.text(12))
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                HStack {
-                    TextField("Kod zgłoszenia, np. M4K-V", text: $submission)
-                        .textFieldStyle(.roundedBorder)
-                    Picker("Urządzenie", selection: $deviceType) {
-                        ForEach(DeviceType.allCases, id: \.self) { Text($0.label).tag($0) }
-                    }
-                    .fixedSize()
-                }
-                Text("„\(folder.lastPathComponent)” będzie nowym zeszytem w tym zgłoszeniu\(Labs.dpi(in: folder).map { ", \($0) dpi z plików" } ?? "").")
-                    .font(Theme.text(11))
-                    .foregroundStyle(Theme.muted)
-            }
+    private func submissionSection(_ submission: Submission) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Zgłoszenie \(submission.code)").font(Theme.text(13, weight: .semibold))
             HStack {
                 Button {
-                    Task { await push(folder, newIn: target) }
+                    Task { await push(submission, force: false) }
                 } label: {
                     Label("Eksportuj i wyślij", systemImage: "arrow.up.circle")
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(!signedIn || busy || (notebook == nil && target == nil))
+                .disabled(!signedIn || busy)
+                Button("Pobierz zmiany") { Task { await pullChanges(submission) } }
+                    .disabled(!signedIn || busy)
                 if pushed { Label("Wysłane", systemImage: "checkmark").foregroundStyle(Theme.accent) }
             }
-            Text("Najpierw eksport (⌘E) do \(Exporter.folderName), potem copyisto trims push.")
+            if awaitingConfirmation {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("copyisto push pyta o to, co wypisał niżej. Nic jeszcze nie wysłano.")
+                        .font(Theme.text(12, weight: .medium))
+                    HStack {
+                        Button("Potwierdź i wyślij") { Task { await push(submission, force: true) } }
+                            .disabled(busy)
+                        Button("Nie wysyłaj") { awaitingConfirmation = false }
+                    }
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.warningSoft, in: .rect(cornerRadius: 6))
+            }
+            Text(store.isSubmissionRoot
+                ? "Najpierw eksport (⌘E) zmienionych zeszytów, potem copyisto push: skany, opis i wycinki."
+                : "Najpierw eksport (⌘E), potem copyisto push tego zeszytu: skany, opis i wycinki.")
                 .font(Theme.text(11))
                 .foregroundStyle(Theme.muted)
         }
@@ -155,25 +161,37 @@ struct LabsSheet: View {
         }
     }
 
-    /// Codes are upper case without spaces; anything else is not one, and the CLI would say so less kindly.
-    private func code(_ text: String) -> String? {
-        let code = text.trimmingCharacters(in: .whitespaces).uppercased()
-        return code.range(of: #"^[A-Z0-9]+(-[A-Z0-9]+)+$"#, options: .regularExpression) == nil ? nil : code
-    }
-
     private func pull() {
-        guard let code = code(pullCode), signedIn, !busy else { return }
+        guard let code = Labs.parse(pullCode), signedIn, !busy else { return }
         Task {
-            if let folder = await labs.pull(code) {
-                store.open(folder)
-                dismiss()
+            guard let folder = await labs.pull(code.submission, notebook: code.notebook) else { return }
+            if store.folder == folder.standardizedFileURL { store.reload() } else { store.open(folder) }
+            // Straight to the notebook asked for.
+            if let number = code.notebook, let first = store.notebooks.first(where: { $0.name == number })?.images.first {
+                store.current = first
             }
+            dismiss()
         }
     }
 
-    private func push(_ folder: URL, newIn submission: String?) async {
+    private func pullChanges(_ submission: Submission) async {
         pushed = false
+        awaitingConfirmation = false
+        _ = await labs.pull(in: submission)
+        store.reload()
+    }
+
+    private func push(_ submission: Submission, force: Bool) async {
+        pushed = false
+        awaitingConfirmation = false
         guard await store.export(announce: false) else { return }
-        pushed = await labs.push(folder, newIn: submission, deviceType: deviceType)
+        // A notebook opened on its own pushes only itself.
+        let notebooks = store.isSubmissionRoot ? [] : store.notebooks.map(\.name)
+        switch await labs.push(in: submission, notebooks: notebooks, force: force) {
+        case .sent: pushed = true
+        case .needsConfirmation: awaitingConfirmation = true
+        case .failed: break
+        }
+        store.reload()
     }
 }

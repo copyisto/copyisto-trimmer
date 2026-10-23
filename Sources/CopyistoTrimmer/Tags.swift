@@ -7,8 +7,9 @@ enum Tags {
     static let maxPerCrop = 20
     static let maxLength = 50
     static let maxNote = 2000
-    /// Written by `copyisto raw pull`: the tags in use on the server, most used first. Read only, never written.
-    static let usageFile = ".copyisto-tags.json"
+    /// The tags in use on the server, most used first, as `copyisto tags` lists them, in a notebook's folder from older CLIs:
+    /// `.tags.copyisto.json`, and `.copyisto-tags.json` before that. A submission keeps them in `.copyisto/tags.json`.
+    static let legacyUsageFiles = [".tags.copyisto.json", ".copyisto-tags.json"]
 
     /// Trimmed, inner whitespace collapsed to one space, lowercase: `normalizeTag`.
     static func normalize(_ tag: String) -> String {
@@ -57,10 +58,12 @@ enum Tags {
         return text
     }
 
-    /// The tags from `.copyisto-tags.json`; a missing or broken file just means no suggestions from it.
-    static func usage(in folder: URL) -> [String] {
+    /// The tags from the first of `files` that exists, which the CLI writes and the app only reads.
+    /// A broken one means no suggestions from the server, rather than an older file's stale list.
+    static func usage(from files: [URL]) -> [String] {
         struct Usage: Decodable { let tag: String }
-        guard let data = try? Data(contentsOf: folder.appending(path: usageFile)),
+        guard let file = files.first(where: { FileManager.default.fileExists(atPath: $0.path) }),
+            let data = try? Data(contentsOf: file),
             let list = try? JSONDecoder().decode([Usage].self, from: data)
         else { return [] }
         return merged(list.compactMap { validated($0.tag) })

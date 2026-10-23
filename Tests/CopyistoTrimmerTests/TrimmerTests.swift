@@ -198,14 +198,19 @@ import Testing
     #expect(Tags.truncated("zażółć", to: 3) == "zaż")
 }
 
-@Test func tagUsageFileGivesSuggestionsOrNothing() throws {
+@Test func tagUsageComesFromTheFirstFileThatExists() throws {
     let folder = try temporaryFolder()
-    #expect(Tags.usage(in: folder).isEmpty)
-    let url = folder.appending(path: Tags.usageFile)
-    try Data(#"[{"tag": "polifonia", "pages": 72}, {"tag": " Monodia ", "pages": 3}]"#.utf8).write(to: url)
-    #expect(Tags.usage(in: folder) == ["polifonia", "monodia"])
-    try Data("{ nie json".utf8).write(to: url)
-    #expect(Tags.usage(in: folder).isEmpty)
+    let files = ["tags.json", ".tags.copyisto.json", ".copyisto-tags.json"].map { folder.appending(path: $0) }
+    #expect(Tags.usage(from: files).isEmpty)
+    try Data(#"[{"tag": "stary", "pages": 1}]"#.utf8).write(to: files[2])
+    #expect(Tags.usage(from: files) == ["stary"])
+    try Data(#"[{"tag": "polifonia", "pages": 72}, {"tag": " Monodia ", "pages": 3}]"#.utf8).write(to: files[1])
+    #expect(Tags.usage(from: files) == ["polifonia", "monodia"])
+    try Data(#"[{"tag": "nowy", "pages": 9}]"#.utf8).write(to: files[0])
+    #expect(Tags.usage(from: files) == ["nowy"])
+    // A broken file is still the one in charge: no suggestions, rather than an older file's stale list.
+    try Data("{ nie json".utf8).write(to: files[0])
+    #expect(Tags.usage(from: files).isEmpty)
 }
 
 @Test func positiveRotationTurnsClockwise() {
@@ -281,13 +286,13 @@ import Testing
 
 // MARK: Helpers
 
-private func temporaryFolder() throws -> URL {
+func temporaryFolder() throws -> URL {
     let url = FileManager.default.temporaryDirectory.appending(path: "copyisto-trimmer-tests-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     return url
 }
 
-private func writePNG(width: Int, height: Int, to url: URL, color: (Int, Int) -> (UInt8, UInt8, UInt8)) throws {
+func writePNG(width: Int, height: Int, to url: URL, color: (Int, Int) -> (UInt8, UInt8, UInt8)) throws {
     let image = try makeImage(width: width, height: height, color: color)
     let destination = try #require(CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil))
     CGImageDestinationAddImage(destination, image, nil)
@@ -298,7 +303,7 @@ private func loadImage(_ url: URL) -> CGImage? {
     CGImageSourceCreateWithURL(url as CFURL, nil).flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) }
 }
 
-private func makeImage(width: Int, height: Int, color: (Int, Int) -> (UInt8, UInt8, UInt8)) throws -> CGImage {
+func makeImage(width: Int, height: Int, color: (Int, Int) -> (UInt8, UInt8, UInt8)) throws -> CGImage {
     var pixels = [UInt8](repeating: 255, count: width * height * 4)
     for y in 0..<height {
         for x in 0..<width {

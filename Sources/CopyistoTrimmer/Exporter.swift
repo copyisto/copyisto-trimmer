@@ -19,7 +19,9 @@ struct ExportJob: Sendable {
 struct ExportSummary: Equatable, Sendable {
     var crops = 0
     var images = 0
-    var folder: URL
+    var folders: [URL] = []
+    /// The notebooks exported, by title; none when every notebook's crops were up to date.
+    var notebooks: [String] = []
 }
 
 enum ExportError: LocalizedError {
@@ -78,7 +80,7 @@ enum Exporter {
         for stale in staleCrops(in: existing, images: images, keep: written) {
             try FileManager.default.removeItem(at: output.appending(path: stale))
         }
-        return ExportSummary(crops: written.count, images: jobs.count, folder: output)
+        return ExportSummary(crops: written.count, images: jobs.count, folders: [output])
     }
 
     /// Decodes one page once and writes all of its boxes; returns the file names written.

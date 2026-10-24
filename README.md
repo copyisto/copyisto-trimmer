@@ -119,15 +119,7 @@ git tag v0.2.0
 git push origin v0.2.0
 ```
 
-Signing needs these repository secrets; without them the build is ad hoc signed and macOS will ask before opening it.
-
-| Secret | What it is |
-|---|---|
-| `MACOS_CERTIFICATE` | The Developer ID Application certificate as a base64 `.p12` |
-| `MACOS_CERTIFICATE_PASSWORD` | The `.p12` password |
-| `NOTARY_KEY` | An App Store Connect API key as a base64 `.p8` |
-| `NOTARY_KEY_ID` | That key's ID |
-| `NOTARY_ISSUER_ID` | The App Store Connect issuer ID |
+[RELEASING.md](RELEASING.md) says where each signing secret comes from, how to check a release, and how updates work.
 
 ## How it works
 

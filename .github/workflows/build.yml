@@ -21,6 +21,10 @@ jobs:
       NOTARY_KEY: ${{ secrets.NOTARY_KEY }}
       NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
       NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+      # Or, for an account without App Store Connect API access, an Apple ID with an app-specific password.
+      NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+      NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+      NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
       # A deploy key of copyisto/homebrew-tap with write access, so a release updates its cask (scripts/signing.sh tap).
       HOMEBREW_TAP_KEY: ${{ secrets.HOMEBREW_TAP_KEY }}
     steps:
@@ -56,12 +60,16 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "build/Copyisto Trimmer.app"
 
       - name: Notarise
-        if: env.MACOS_CERTIFICATE != '' && env.NOTARY_KEY != ''
+        if: env.MACOS_CERTIFICATE != '' && (env.NOTARY_KEY != '' || env.NOTARY_APPLE_ID != '')
         run: |
-          echo "$NOTARY_KEY" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+          if [[ -n "$NOTARY_KEY" ]]; then
+            echo "$NOTARY_KEY" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+            credentials=(--key "$RUNNER_TEMP/notary.p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID")
+          else
+            credentials=(--apple-id "$NOTARY_APPLE_ID" --password "$NOTARY_PASSWORD" --team-id "$NOTARY_TEAM_ID")
+          fi
           ditto -c -k --keepParent "build/Copyisto Trimmer.app" "$RUNNER_TEMP/notarise.zip"
-          xcrun notarytool submit "$RUNNER_TEMP/notarise.zip" \
-            --key "$RUNNER_TEMP/notary.p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --wait
+          xcrun notarytool submit "$RUNNER_TEMP/notarise.zip" "${credentials[@]}" --wait
           # Stapling lets the app open offline without Gatekeeper having to look up the ticket.
           xcrun stapler staple "build/Copyisto Trimmer.app"
           spctl --assess --type execute --verbose "build/Copyisto Trimmer.app"

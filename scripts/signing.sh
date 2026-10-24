@@ -7,6 +7,7 @@
 #   scripts/signing.sh request EMAIL           or, with no Developer ID in the keychain, a private key and a signing request for developer.apple.com
 #   scripts/signing.sh certificate FILE.cer    and then the same two secrets from Apple's certificate
 #   scripts/signing.sh notary FILE.p8 ISSUER   NOTARY_KEY, NOTARY_KEY_ID and NOTARY_ISSUER_ID from an App Store Connect API key
+#   scripts/signing.sh apple-id EMAIL TEAM     or NOTARY_APPLE_ID, NOTARY_PASSWORD and NOTARY_TEAM_ID from an app-specific password
 #   scripts/signing.sh tap                     HOMEBREW_TAP_KEY, a deploy key that lets a release update copyisto/homebrew-tap
 #
 # SIGNING_DIR  where the private key waits between request and certificate (default ~/copyisto-signing)
@@ -77,6 +78,19 @@ notary)
   echo "Set NOTARY_KEY, NOTARY_KEY_ID ($id) and NOTARY_ISSUER_ID."
   echo "Apple lets you download $p8 once: keep it in a password manager, then delete it."
   ;;
+apple-id)
+  apple_id="${2:?usage: scripts/signing.sh apple-id EMAIL TEAM}"
+  team="${3:?usage: scripts/signing.sh apple-id EMAIL TEAM}"
+  read -rsp "App-specific password of $apple_id: " password
+  echo
+  # Asks Apple, so a wrong password or team fails here rather than in the first release.
+  xcrun notarytool history --apple-id "$apple_id" --password "$password" --team-id "$team" >/dev/null \
+    || fail "Apple refused $apple_id for team $team."
+  gh secret set NOTARY_APPLE_ID -R "$repo" --body "$apple_id"
+  printf '%s' "$password" | gh secret set NOTARY_PASSWORD -R "$repo"
+  gh secret set NOTARY_TEAM_ID -R "$repo" --body "$team"
+  echo "Set NOTARY_APPLE_ID, NOTARY_PASSWORD and NOTARY_TEAM_ID ($team)."
+  ;;
 tap)
   work="$(mktemp -d)"
   trap 'rm -rf "$work"' EXIT
@@ -86,7 +100,7 @@ tap)
   echo "Set HOMEBREW_TAP_KEY; its public half is a deploy key of $tap."
   ;;
 *)
-  sed -n '6,10p' "$0" | sed 's/^# *//'
+  sed -n '6,11p' "$0" | sed 's/^# *//'
   exit 1
   ;;
 esac

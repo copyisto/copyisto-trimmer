@@ -8,7 +8,7 @@ The download link in the README always points at the latest release: `releases/l
 Without them, the build is signed ad hoc.
 macOS then refuses to open the downloaded app, and the only way past it is System Settings → Privacy & Security → **Open Anyway**.
 With them, the app is signed with a Developer ID, notarised by Apple and stapled, so it opens with a double click, offline too.
-The workflow signs only when `MACOS_CERTIFICATE` is set, notarises only when `NOTARY_KEY` is set as well, and updates the cask only when `HOMEBREW_TAP_KEY` is set; forks and pull requests keep building ad hoc.
+The workflow signs only when `MACOS_CERTIFICATE` is set, notarises only when `NOTARY_KEY` or `NOTARY_APPLE_ID` is set as well, and updates the cask only when `HOMEBREW_TAP_KEY` is set; forks and pull requests keep building ad hoc.
 
 ## Setting the secrets
 
@@ -73,6 +73,17 @@ The build adds Apple's intermediate certificates itself, so a `.p12` with the ce
    ```
    The key ID comes from the file's name, and the script asks Apple whether the key works before setting anything.
 
+**Without Integrations**, which App Store Connect shows only to the Account Holder and Admins, once the current agreements are accepted (Business → Agreements), notarise with the Apple ID instead:
+
+1. [account.apple.com](https://account.apple.com) → Sign-In and Security → **App-Specific Passwords** → **+**, named `copyisto-trimmer notarisation`.
+2. Set the three secrets with the Apple ID and the team ID (in brackets in the certificate's name, or under Membership details on developer.apple.com); the script asks for the password and checks it with Apple:
+   ```sh
+   scripts/signing.sh apple-id dev@michalkulbacki.com 4Y2F8384Q2
+   ```
+
+The build uses the API key when both are set.
+An app-specific password stops working when the Apple ID's password changes; revoke it on the same page when it is no longer needed.
+
 ### 3. The Homebrew tap: `HOMEBREW_TAP_KEY`
 
 The tap is its own repository, made once from its local copy (a `Casks/copyisto-trimmer.rb` and a README):
@@ -85,7 +96,7 @@ scripts/signing.sh tap
 It makes an SSH key, adds its public half to copyisto/homebrew-tap as a deploy key with write access, and sets the private half as the secret.
 A deploy key reaches that one repository only and belongs to no person, so it outlives anyone's access token.
 
-`gh secret list -R copyisto/copyisto-trimmer` should then list all six.
+`gh secret list -R copyisto/copyisto-trimmer` should then list all six: two for the certificate, three for notarisation and the tap's key.
 
 ## Publishing a release
 

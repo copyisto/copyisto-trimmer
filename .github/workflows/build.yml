@@ -39,6 +39,11 @@ jobs:
           security set-keychain-settings -lut 21600 "$keychain"
           security unlock-keychain -p "$password" "$keychain"
           security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          # Apple's intermediates, which a .p12 exported from Keychain Access leaves out, so codesign can chain to the root.
+          for ca in DeveloperIDG2CA DeveloperIDCA; do
+            curl -fsSL "https://www.apple.com/certificateauthority/$ca.cer" -o "$RUNNER_TEMP/$ca.cer"
+            security import "$RUNNER_TEMP/$ca.cer" -k "$keychain"
+          done
           security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain"
           # The signing keychain first, so codesign finds the certificate; login stays for everything else.
           security list-keychains -d user -s "$keychain" login.keychain-db

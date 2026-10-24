@@ -12,7 +12,7 @@ The workflow signs only when `MACOS_CERTIFICATE` is set, notarises only when `NO
 
 ## Setting the secrets
 
-`scripts/signing.sh` makes all six from Apple's web pages alone.
+`scripts/signing.sh` makes all six from the keychain or Apple's web pages.
 The Apple account does not have to be signed in on this Mac, in Xcode or anywhere else: the private key is made here, Apple's website only signs it, and the script hands everything to GitHub without printing it.
 It needs `gh` signed in with admin access to copyisto/copyisto-trimmer and copyisto/homebrew-tap.
 
@@ -21,7 +21,28 @@ Sign in to the web pages below with that account.
 
 ### 1. The certificate: `MACOS_CERTIFICATE`, `MACOS_CERTIFICATE_PASSWORD`
 
-1. Make a private key and a signing request, with the account's email:
+The **Developer ID Application** certificate with its private key, as a `.p12`.
+Check whether this Mac has one, and for which team:
+
+```sh
+security find-certificate -a -c "Developer ID Application" -p | openssl x509 -noout -subject -enddate
+```
+
+**If it does**, as `Developer ID Application: Michal Kulbacki (4Y2F8384Q2)` does on Michał's Mac, export it:
+
+1. Open Keychain Access (`open -a "Keychain Access"`) → login → **My Certificates**.
+   Not Certificates: only My Certificates exports the private key along.
+2. Right-click **Developer ID Application: …** → **Export** → format Personal Information Exchange (`.p12`) → save to the Desktop with a new password.
+   macOS then asks for your login password to let the key out.
+3. Set both secrets; the script asks for the `.p12` password and checks the file holds the certificate and its key:
+   ```sh
+   scripts/signing.sh p12 ~/Desktop/Certificates.p12
+   ```
+4. Keep the `.p12` and its password in a password manager, then delete the file.
+
+**If it does not**, make one with Apple's web page:
+
+1. Make a private key and a signing request, with the Apple account's email:
    ```sh
    scripts/signing.sh request dev@michalkulbacki.com
    ```
@@ -31,9 +52,11 @@ Sign in to the web pages below with that account.
    ```sh
    scripts/signing.sh certificate ~/Downloads/developerID_application.cer
    ```
-   It checks the certificate belongs to the key, adds Apple's intermediate certificate, makes a `.p12` with a random password and sets both secrets.
+   It checks the certificate belongs to the key, makes a `.p12` with a random password and sets both secrets.
 4. Keep `~/copyisto-signing/developer-id.p12` and `developer-id.key` in a password manager, then delete the folder.
-   The certificate is valid for five years; renewing it is the same three steps.
+
+A Developer ID certificate is valid for five years; renewing it is the same steps.
+The build adds Apple's intermediate certificates itself, so a `.p12` with the certificate alone is enough.
 
 ### 2. The notary key: `NOTARY_KEY`, `NOTARY_KEY_ID`, `NOTARY_ISSUER_ID`
 

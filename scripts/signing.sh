@@ -1,10 +1,11 @@
 #!/bin/bash
 # Makes the repository secrets that sign, notarise and publish releases, with Apple's web pages only:
-# no Xcode, no Apple account on this Mac, nothing in the keychain. Keys are made here, signed by Apple,
+# no Xcode, no Apple account on this Mac. Keys are made here, signed by Apple,
 # and go straight to GitHub without being printed. RELEASING.md walks through it.
 #
-#   scripts/signing.sh request EMAIL           a private key and a signing request for developer.apple.com
-#   scripts/signing.sh certificate FILE.cer    MACOS_CERTIFICATE and MACOS_CERTIFICATE_PASSWORD from Apple's certificate
+#   scripts/signing.sh p12 FILE.p12            MACOS_CERTIFICATE and MACOS_CERTIFICATE_PASSWORD from a Developer ID exported from Keychain Access
+#   scripts/signing.sh request EMAIL           or, with no Developer ID in the keychain, a private key and a signing request for developer.apple.com
+#   scripts/signing.sh certificate FILE.cer    and then the same two secrets from Apple's certificate
 #   scripts/signing.sh notary FILE.p8 ISSUER   NOTARY_KEY, NOTARY_KEY_ID and NOTARY_ISSUER_ID from an App Store Connect API key
 #   scripts/signing.sh tap                     HOMEBREW_TAP_KEY, a deploy key that lets a release update copyisto/homebrew-tap
 #
@@ -19,6 +20,22 @@ openssl=/usr/bin/openssl
 fail() { echo "$*" >&2; exit 1; }
 
 case "${1:-}" in
+p12)
+  p12="${2:?usage: scripts/signing.sh p12 FILE.p12}"
+  read -rsp "Password of $p12: " password
+  echo
+  # Checked here, so a wrong password fails now rather than in the first release.
+  subject="$(P12_PASSWORD="$password" "$openssl" pkcs12 -in "$p12" -passin env:P12_PASSWORD -nokeys 2>/dev/null \
+    | "$openssl" x509 -noout -subject -enddate 2>/dev/null)" || fail "Cannot read $p12 with that password."
+  [[ "$subject" == *"Developer ID Application"* ]] || fail "$p12 holds no Developer ID Application certificate: $subject"
+  P12_PASSWORD="$password" "$openssl" pkcs12 -in "$p12" -passin env:P12_PASSWORD -nocerts -nodes 2>/dev/null | grep -q "PRIVATE KEY" \
+    || fail "$p12 has no private key: export it from My Certificates, not Certificates."
+  base64 -i "$p12" | gh secret set MACOS_CERTIFICATE -R "$repo"
+  printf '%s' "$password" | gh secret set MACOS_CERTIFICATE_PASSWORD -R "$repo"
+  echo "Set MACOS_CERTIFICATE and MACOS_CERTIFICATE_PASSWORD for"
+  echo "$subject"
+  echo "Keep $p12 in a password manager, then delete it."
+  ;;
 request)
   email="${2:?usage: scripts/signing.sh request EMAIL}"
   [[ -e "$dir/developer-id.key" ]] && fail "$dir/developer-id.key already exists; upload $dir/developer-id.csr, or remove the folder to start over."
@@ -36,12 +53,9 @@ certificate)
     || fail "$cer was not made from the request in $dir."
   subject="$("$openssl" x509 -noout -subject -in "$dir/developer-id.pem")"
   [[ "$subject" == *"Developer ID Application"* ]] || fail "$cer is not a Developer ID Application certificate: $subject"
-  # Apple's intermediate goes into the .p12 too, or codesign on the runner may not find a chain to Apple's root.
-  if "$openssl" x509 -noout -issuer -in "$dir/developer-id.pem" | grep -q "OU=G2"; then ca=DeveloperIDG2CA; else ca=DeveloperIDCA; fi
-  curl -fsSL "https://www.apple.com/certificateauthority/$ca.cer" | "$openssl" x509 -inform DER -out "$dir/intermediate.pem"
   password="$("$openssl" rand -hex 24)"
   (umask 077 && P12_PASSWORD="$password" "$openssl" pkcs12 -export -name "Developer ID Application" \
-    -inkey "$dir/developer-id.key" -in "$dir/developer-id.pem" -certfile "$dir/intermediate.pem" \
+    -inkey "$dir/developer-id.key" -in "$dir/developer-id.pem" \
     -out "$dir/developer-id.p12" -passout env:P12_PASSWORD)
   base64 -i "$dir/developer-id.p12" | gh secret set MACOS_CERTIFICATE -R "$repo"
   printf '%s' "$password" | gh secret set MACOS_CERTIFICATE_PASSWORD -R "$repo"
@@ -72,7 +86,7 @@ tap)
   echo "Set HOMEBREW_TAP_KEY; its public half is a deploy key of $tap."
   ;;
 *)
-  sed -n '6,9p' "$0" | sed 's/^# *//'
+  sed -n '6,10p' "$0" | sed 's/^# *//'
   exit 1
   ;;
 esac

@@ -55,7 +55,7 @@ security find-certificate -a -c "Developer ID Application" -p | openssl x509 -no
    It checks the certificate belongs to the key, makes a `.p12` with a random password and sets both secrets.
 4. Keep `~/copyisto-signing/developer-id.p12` and `developer-id.key` in a password manager, then delete the folder.
 
-A Developer ID certificate is valid for five years; renewing it is the same steps.
+The scripts print when the certificate expires (the one made for this repository in October 2026 runs until November 2027); renewing it is the same steps, and the build fails to sign once it has expired.
 The build adds Apple's intermediate certificates itself, so a `.p12` with the certificate alone is enough.
 
 ### 2. The notary key: `NOTARY_KEY`, `NOTARY_KEY_ID`, `NOTARY_ISSUER_ID`

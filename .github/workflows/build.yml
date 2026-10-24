@@ -21,6 +21,8 @@ jobs:
       NOTARY_KEY: ${{ secrets.NOTARY_KEY }}
       NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
       NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+      # A deploy key of copyisto/homebrew-tap with write access, so a release updates its cask (scripts/signing.sh tap).
+      HOMEBREW_TAP_KEY: ${{ secrets.HOMEBREW_TAP_KEY }}
     steps:
       - uses: actions/checkout@v5
 
@@ -72,3 +74,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" build/Copyisto-Trimmer.zip --title "$GITHUB_REF_NAME" --generate-notes
+
+      - name: Update the Homebrew cask
+        if: github.ref_type == 'tag' && env.HOMEBREW_TAP_KEY != ''
+        run: |
+          key="$RUNNER_TEMP/tap_key"
+          printf '%s\n' "$HOMEBREW_TAP_KEY" > "$key"
+          chmod 600 "$key"
+          # GitHub's published host key, so the push never trusts whoever answers first.
+          echo "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" > "$RUNNER_TEMP/known_hosts"
+          export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o UserKnownHostsFile=$RUNNER_TEMP/known_hosts"
+          git clone --depth 1 git@github.com:copyisto/homebrew-tap.git "$RUNNER_TEMP/tap"
+          cd "$RUNNER_TEMP/tap"
+          version="${GITHUB_REF_NAME#v}"
+          sha="$(shasum -a 256 "$GITHUB_WORKSPACE/build/Copyisto-Trimmer.zip" | cut -d ' ' -f 1)"
+          sed -i '' -e "s/^  version \".*\"/  version \"$version\"/" -e "s/^  sha256 \".*\"/  sha256 \"$sha\"/" Casks/copyisto-trimmer.rb
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -am "copyisto-trimmer $version"
+          git push

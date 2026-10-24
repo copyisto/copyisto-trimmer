@@ -37,6 +37,13 @@ struct AppCommands: Commands {
     private var typing: Bool { store.editing != nil }
 
     var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            // The app makes no network requests, so it shows the latest release rather than checking for one;
+            // installed with Homebrew, `brew upgrade` updates it.
+            Button("Sprawdź aktualizacje…") {
+                NSWorkspace.shared.open(URL(string: "https://github.com/copyisto/copyisto-trimmer/releases/latest")!)
+            }
+        }
         CommandGroup(replacing: .newItem) {
             Button("Otwórz folder…") { store.isPickingFolder = true }
                 .keyboardShortcut("o")

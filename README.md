@@ -14,9 +14,19 @@ It is built for the [Copyisto](https://copyisto.com) dataset of handwritten harm
 
 ## Download
 
-1. Download [Copyisto-Trimmer.zip](https://github.com/copyisto/copyisto-trimmer/releases/latest/download/Copyisto-Trimmer.zip) from the latest release.
-2. Unzip it and drag **Copyisto Trimmer** into Applications.
+With [Homebrew](https://brew.sh):
 
+```sh
+brew install --cask copyisto/tap/copyisto-trimmer
+```
+
+`brew upgrade` then keeps it up to date.
+Or by hand:
+
+1. Download [Copyisto-Trimmer.zip](https://github.com/copyisto/copyisto-trimmer/releases/latest/download/Copyisto-Trimmer.zip) from the latest release.
+2. Unzip it and drag **Copyisto Trimmer** into Applications, over the old one when updating.
+
+**Sprawdź aktualizacje…** in the app menu opens the latest release.
 Requires macOS 26, on Apple silicon or Intel.
 
 ## Use
@@ -119,7 +129,7 @@ git tag v0.2.0
 git push origin v0.2.0
 ```
 
-[RELEASING.md](RELEASING.md) says where each signing secret comes from, how to check a release, and how updates work.
+[RELEASING.md](RELEASING.md) says how to make the signing secrets with Apple's web pages and `scripts/signing.sh`, how to check a release, and how updates reach users.
 
 ## How it works
 

@@ -11,9 +11,10 @@
 #   scripts/signing.sh tap                     HOMEBREW_TAP_KEY, a deploy key that lets a release update copyisto/homebrew-tap
 #
 # SIGNING_DIR  where the private key waits between request and certificate (default ~/copyisto-signing)
+# REPO, TAP    the app's and the tap's repositories (default copyisto/copyisto-trimmer, copyisto/homebrew-tap)
 set -euo pipefail
-repo=copyisto/copyisto-trimmer
-tap=copyisto/homebrew-tap
+repo="${REPO:-copyisto/copyisto-trimmer}"
+tap="${TAP:-copyisto/homebrew-tap}"
 dir="${SIGNING_DIR:-$HOME/copyisto-signing}"
 # LibreSSL, which writes a .p12 that the keychain on the CI runner can import; Homebrew's OpenSSL 3 needs -legacy for that.
 openssl=/usr/bin/openssl

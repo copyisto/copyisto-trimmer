@@ -52,7 +52,10 @@ Sign in to the web pages below with that account.
 
 ### 3. The Homebrew tap: `HOMEBREW_TAP_KEY`
 
+The tap is its own repository, made once from its local copy (a `Casks/copyisto-trimmer.rb` and a README):
+
 ```sh
+gh repo create copyisto/homebrew-tap --public --source ../homebrew-tap --push
 scripts/signing.sh tap
 ```
 

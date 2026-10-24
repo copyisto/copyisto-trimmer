@@ -38,7 +38,7 @@ struct Submission: Equatable {
 
     /// „M4K-V-01”, or the folder's name for a notebook without a number yet.
     func title(of folderName: String) -> String {
-        Self.number(of: folderName).map { "\(code)-\($0)" } ?? "\(folderName): nowy zeszyt"
+        Self.number(of: folderName).map { "\(code)-\($0)" } ?? "\(folderName) (bez numeru)"
     }
 
     /// Notebook folders in the order of their numbers, new ones last, as the CLI and the website list them.

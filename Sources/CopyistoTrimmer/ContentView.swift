@@ -76,10 +76,15 @@ struct ContentView: View {
             }
     }
 
+    /// What kind of folder is open, then its counts, so a plain folder is never taken for a submission.
     private var subtitle: String {
-        let pages = plural(store.images.count, "zdjęcie", "zdjęcia", "zdjęć")
         let crops = plural(store.totalBoxes, "wycinek", "wycinki", "wycinków")
-        return "\(pages) · \(crops)"
+        guard let submission = store.submission else {
+            return "zwykły folder, nie zgłoszenie · \(plural(store.images.count, "skan", "skany", "skanów")) · \(crops)"
+        }
+        let scans = plural(store.images.count, "skan RAW", "skany RAW", "skanów RAW")
+        guard store.isSubmissionRoot else { return "w zgłoszeniu \(submission.code) · \(scans) · \(crops)" }
+        return "\(plural(store.notebooks.count, "zeszyt", "zeszyty", "zeszytów")) · \(scans) · \(crops)"
     }
 
     private func exportMessage(_ summary: ExportSummary) -> String {
@@ -116,29 +121,17 @@ struct ContentView: View {
                 .foregroundStyle(Theme.muted)
                 .selectionDisabled()
             }
-            // One notebook needs no headers; several get one each, foldable, in the order of their numbers.
-            if store.notebooks.count > 1 {
-                ForEach(store.notebooks) { notebook in
-                    Section(isExpanded: Binding(
-                        get: { !store.collapsed.contains(notebook.path) },
-                        set: { if $0 { store.collapsed.remove(notebook.path) } else { store.collapsed.insert(notebook.path) } }
-                    )) {
-                        ForEach(notebook.images, id: \.self) { image in
-                            SidebarRow(image: image).tag(image)
-                        }
-                        if notebook.images.isEmpty {
-                            Text("Brak skanów")
-                                .font(Theme.text(12))
-                                .foregroundStyle(Theme.muted)
-                                .selectionDisabled()
-                        }
-                    } header: {
-                        NotebookHeader(notebook: notebook)
+            // Each notebook gets a header saying which it is, foldable, in the order of their numbers.
+            ForEach(store.notebooks) { notebook in
+                Section(isExpanded: Binding(
+                    get: { !store.collapsed.contains(notebook.path) },
+                    set: { if $0 { store.collapsed.remove(notebook.path) } else { store.collapsed.insert(notebook.path) } }
+                )) {
+                    ForEach(notebook.images, id: \.self) { image in
+                        SidebarRow(image: image).tag(image)
                     }
-                }
-            } else {
-                ForEach(store.images, id: \.self) { image in
-                    SidebarRow(image: image).tag(image)
+                } header: {
+                    NotebookHeader(notebook: notebook)
                 }
             }
         }
@@ -289,8 +282,8 @@ private struct SidebarRow: View {
         let count = store.boxes(for: image).count
         let isSelected = store.current == image
         HStack(spacing: 8) {
-            // Done pages get a filled mark, so what is left to crop stands out at a glance.
-            Image(systemName: count > 0 ? "checkmark.circle.fill" : "circle")
+            // A scan's mark, filled once it has boxes, so what is left to crop stands out at a glance.
+            Image(systemName: count > 0 ? "doc.viewfinder.fill" : "doc.viewfinder")
                 .font(.system(size: 13))
                 .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : count > 0 ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.tertiary))
             Text(store.fileName(of: image))
@@ -306,22 +299,27 @@ private struct SidebarRow: View {
                     .foregroundStyle(isSelected ? .primary : .secondary)
             }
         }
+        .help("\(store.submission == nil ? "Skan" : "Skan RAW") \(store.fileName(of: image)): \(plural(count, "ramka", "ramki", "ramek"))")
     }
 }
 
-/// A notebook's title in the list, with its note from the description and its state.
+/// A notebook's title in the list, with its counts, its note from the description and its state.
 private struct NotebookHeader: View {
     @Environment(Store.self) private var store
     let notebook: Notebook
 
     var body: some View {
         let note = store.descriptionLevel(of: notebook).map(store.description.note(at:)) ?? ""
+        let raw = store.submission != nil
         VStack(alignment: .leading, spacing: 2) {
-            Text(store.title(of: notebook))
+            Text(raw ? "Zeszyt: \(store.title(of: notebook))" : "Skany w folderze")
                 .font(Theme.text(12, weight: .semibold))
                 .foregroundStyle(Theme.text)
                 .lineLimit(1)
-            if store.number(of: notebook) == nil {
+            Text("\(plural(notebook.images.count, raw ? "skan RAW" : "skan", raw ? "skany RAW" : "skany", raw ? "skanów RAW" : "skanów")) · \(plural(store.boxCount(in: notebook.images), "wycinek", "wycinki", "wycinków"))")
+                .font(Theme.text(11).monospacedDigit())
+                .foregroundStyle(Theme.muted)
+            if raw, store.number(of: notebook) == nil {
                 Text("numer nada copyisto push")
                     .font(Theme.text(11))
                     .foregroundStyle(Theme.muted)

@@ -3,22 +3,24 @@ import SwiftUI
 enum InspectorField: Hashable {
     case boxTags, boxNote
     case scanDevice, scanDPI, scanTags, scanNote, trimmerPageNote
-    case notebookTags, notebookNote
+    case notebookDevice, notebookDPI, notebookTags, notebookNote
+    case submissionDevice, submissionDPI, submissionTags
 
     var tab: InspectorTab {
         switch self {
         case .boxTags, .boxNote: .crop
-        case .notebookTags, .notebookNote: .notebook
+        case .notebookDevice, .notebookDPI, .notebookTags, .notebookNote: .notebook
+        case .submissionDevice, .submissionDPI, .submissionTags: .submission
         default: .scan
         }
     }
 }
 
 enum InspectorTab: Hashable {
-    case crop, scan, notebook
+    case crop, scan, notebook, submission
 }
 
-/// Describes one level at a time: the selected box's crop, the scan, or its notebook.
+/// Describes one level at a time: the selected box's crop, the scan, its notebook, or the whole submission.
 /// Each tab edits only its own level and shows what it inherits from above, greyed, once.
 struct InspectorView: View {
     @Environment(Store.self) private var store
@@ -32,6 +34,7 @@ struct InspectorView: View {
                 // In a submission the scan is a file of the notebook's RAW, and its description reaches the server.
                 Text(store.submission == nil ? "Skan" : "Skan RAW").tag(InspectorTab.scan)
                 Text(store.submission == nil ? "Folder" : "Zeszyt").tag(InspectorTab.notebook)
+                if store.submission != nil { Text("Zgłoszenie").tag(InspectorTab.submission) }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
@@ -43,6 +46,7 @@ struct InspectorView: View {
                     case .crop: cropTab
                     case .scan: scanTab
                     case .notebook: notebookTab
+                    case .submission: submissionTab
                     }
                 }
                 .padding(16)
@@ -120,7 +124,13 @@ struct InspectorView: View {
             SectionTitle(
                 "\(store.submission == nil ? "Skan" : "Skan RAW") „\(store.fileName(of: image))”",
                 detail: store.submission == nil ? "Każdy wycinek z tego skanu." : "Ten plik w zgłoszeniu i każdy wycinek z niego.")
-            if store.submission != nil { source(image, level: level) }
+            if store.submission != nil {
+                let number = store.notebook(of: image).flatMap(store.number(of:))
+                source(
+                    at: level,
+                    above: store.description.meta(levels: [Description.top] + (number.map { [Description.notebook($0)] } ?? [])).source,
+                    from: "w zeszycie", applies: store.meta(of: image).source, fields: (.scanDevice, .scanDPI))
+            }
             FieldLabel("Tagi")
             TagEditor(tags: own, inherited: above, suggestions: store.tagSuggestions, field: .scanTags, focus: $focus) {
                 store.setScanTags($0, on: image)
@@ -151,7 +161,7 @@ struct InspectorView: View {
                 tags: above.filter { !own.contains($0) }, note: "", source: nil)
             if store.submission != nil {
                 Footnote(level == nil
-                    ? "Zeszyt nie ma jeszcze numeru, więc urządzenie ustawisz po copyisto push. Tagi i uwaga zapisują się w pliku trimmera."
+                    ? "Zeszyt nie ma jeszcze numeru, więc urządzenie skanu ustawisz po copyisto push, a dla całego zgłoszenia w zakładce Zgłoszenie. Tagi i uwaga zapisują się w pliku trimmera."
                     : "Zapisuje się w opisie zgłoszenia (.copyisto/description.json); wyśle go copyisto push.")
             }
         } else {
@@ -159,33 +169,34 @@ struct InspectorView: View {
         }
     }
 
-    /// What the scan was taken with; unset fields come from the notebook or the submission, shown as placeholders.
+    /// What the files of a level were taken with; unset fields come from the level above, shown as placeholders.
+    /// `applies` is what the level ends up with, its own fields over those above.
     @ViewBuilder
-    private func source(_ image: String, level: [String]?) -> some View {
-        let description = store.description
-        let number = store.notebook(of: image).flatMap(store.number(of:))
-        let above = description.meta(levels: [Description.top] + (number.map { [Description.notebook($0)] } ?? []))
-        let own = level.map(description.source(at:)) ?? Description.Source()
-        // The device and dpi above apply only while the file keeps their device type.
-        let carried = own.deviceType == nil || own.deviceType == above.source.deviceType ? above.source : Description.Source()
-        FieldLabel("Urządzenie: \(Description.label(store.meta(of: image).source) ?? "nie podano")")
+    private func source(
+        at level: [String]?, above: Description.Source, from aboveName: String, applies: Description.Source,
+        fields: (device: InspectorField, dpi: InspectorField)
+    ) -> some View {
+        let own = level.map(store.description.source(at:)) ?? Description.Source()
+        // The device and dpi above apply only while the level keeps their device type.
+        let carried = own.deviceType == nil || own.deviceType == above.deviceType ? above : Description.Source()
+        FieldLabel("Urządzenie: \(Description.label(applies) ?? "nie podano")")
         Group {
             Picker("Rodzaj", selection: Binding(
                 get: { own.deviceType ?? "" },
                 set: { value in level.map { store.setDescription(.deviceType, value.isEmpty ? nil : value, at: $0) } }
             )) {
-                Text(above.source.deviceType.map { "Jak w zeszycie (\(Description.deviceLabel($0)))" } ?? "Nie podano").tag("")
+                Text(above.deviceType.map { "Jak \(aboveName) (\(Description.deviceLabel($0)))" } ?? "Nie podano").tag("")
                 ForEach(Description.deviceTypes, id: \.self) { Text(Description.deviceLabel($0).capitalized).tag($0) }
             }
             .labelsHidden()
             HStack(spacing: 6) {
                 DraftField(
                     value: own.device ?? "", prompt: carried.device ?? "Model, np. Epson DS-70000",
-                    field: .scanDevice, focus: $focus
+                    field: fields.device, focus: $focus
                 ) { text in level.map { store.setDescription(.device, text, at: $0) } }
                 DraftField(
                     value: own.dpi.map(String.init) ?? "", prompt: carried.dpi.map { "\($0) dpi" } ?? "DPI",
-                    field: .scanDPI, focus: $focus
+                    field: fields.dpi, focus: $focus
                 ) { text in
                     // Half-typed junk waits in the field instead of erasing the stored dpi.
                     let dpi = Int(text.trimmingCharacters(in: .whitespaces))
@@ -195,6 +206,8 @@ struct InspectorView: View {
             }
         }
         .disabled(level == nil)
+        // Fields of another level are other views, so typed text never lands on the wrong level.
+        .id(level)
     }
 
     // MARK: Notebook
@@ -204,11 +217,16 @@ struct InspectorView: View {
         if let notebook = store.current.flatMap(store.notebook(of:)) ?? store.notebooks.first {
             let level = store.descriptionLevel(of: notebook)
             let own = store.notebookOwnTags(notebook)
-            let top = store.description.tags(at: Description.top)
+            let topTags = store.description.tags(at: Description.top)
             if let submission = store.submission {
+                let top = Description.top
                 SectionTitle("Zeszyt \(store.title(of: notebook))", detail: "Każdy skan RAW i wycinek z tego zeszytu.")
+                source(
+                    at: level, above: store.description.source(at: top), from: "w zgłoszeniu",
+                    applies: store.description.meta(levels: [top] + (level.map { [$0] } ?? [])).source,
+                    fields: (.notebookDevice, .notebookDPI))
                 FieldLabel("Tagi")
-                TagEditor(tags: own, inherited: top, suggestions: store.tagSuggestions, field: .notebookTags, focus: $focus) {
+                TagEditor(tags: own, inherited: topTags, suggestions: store.tagSuggestions, field: .notebookTags, focus: $focus) {
                     store.setNotebookOwnTags($0, of: notebook)
                 }
                 .id("notebook:\(notebook.path)")
@@ -222,11 +240,10 @@ struct InspectorView: View {
                 .disabled(level == nil)
                 Inherited(
                     title: "Dziedziczy ze zgłoszenia \(submission.code)",
-                    tags: top.filter { !own.contains($0) }, note: "",
-                    source: Description.label(store.description.source(at: Description.top)))
+                    tags: topTags.filter { !own.contains($0) }, note: "", source: nil)
                 Footnote(level == nil
-                    ? "Zeszyt nie ma jeszcze numeru: uwagę ustawisz po copyisto push. Tagi zapisują się w pliku trimmera. Opis całego zgłoszenia zmienisz poleceniem copyisto describe."
-                    : "Zapisuje się w opisie zgłoszenia; wyśle go copyisto push. Opis całego zgłoszenia zmienisz poleceniem copyisto describe.")
+                    ? "Zeszyt nie ma jeszcze numeru: urządzenie i uwagę ustawisz po copyisto push. Tagi zapisują się w pliku trimmera. Całe zgłoszenie opiszesz w zakładce Zgłoszenie."
+                    : "Zapisuje się w opisie zgłoszenia; wyśle go copyisto push. Całe zgłoszenie opiszesz w zakładce Zgłoszenie.")
             } else {
                 SectionTitle("Folder „\(notebook.name)”", detail: "Każdy wycinek z tego folderu.")
                 FieldLabel("Tagi")
@@ -234,6 +251,27 @@ struct InspectorView: View {
                     store.setNotebookOwnTags($0, of: notebook)
                 }
             }
+        }
+    }
+
+    // MARK: Submission
+
+    /// The top of the description, as `copyisto describe` sets it: what every notebook's files were taken with, and their tags.
+    @ViewBuilder
+    private var submissionTab: some View {
+        if let submission = store.submission {
+            let top = Description.top
+            SectionTitle("Zgłoszenie \(submission.code)", detail: "Każdy zeszyt, skan RAW i wycinek z tego zgłoszenia.")
+            source(
+                at: top, above: Description.Source(), from: "", applies: store.description.source(at: top),
+                fields: (.submissionDevice, .submissionDPI))
+            FieldLabel("Tagi")
+            TagEditor(
+                tags: store.description.tags(at: top), inherited: [], suggestions: store.tagSuggestions,
+                field: .submissionTags, focus: $focus
+            ) { store.setDescription(.tags, $0, at: top) }
+            .id("submission")
+            Footnote("Zapisuje się w opisie zgłoszenia (.copyisto/description.json), jak copyisto describe; wyśle go copyisto push. Zeszyt i skan mogą ustawić inne urządzenie i dodać tagi.")
         }
     }
 }

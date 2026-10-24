@@ -133,6 +133,7 @@ final class Store {
             self.folder = folder
             submission = found?.submission
             isSubmissionRoot = found?.isRoot == true
+            if submission == nil, inspectorTab == .submission { inspectorTab = .notebook }
             apply(contents)
             undoStack.removeAll()
             redoStack.removeAll()
@@ -311,11 +312,11 @@ final class Store {
         submission?.title(of: notebook.name) ?? notebook.name
     }
 
-    /// The window's title: the submission's code, a notebook's ID, or the folder's name.
+    /// The window's title, saying what is open: „Zgłoszenie: M4K-V”, „Zeszyt: M4K-V-01” or „Folder: skany”.
     var title: String {
         guard let folder else { return "Copyisto Trimmer" }
-        guard let submission else { return folder.lastPathComponent }
-        return isSubmissionRoot ? submission.code : submission.title(of: folder.lastPathComponent)
+        guard let submission else { return "Folder: \(folder.lastPathComponent)" }
+        return isSubmissionRoot ? "Zgłoszenie: \(submission.code)" : "Zeszyt: \(submission.title(of: folder.lastPathComponent))"
     }
 
     func url(for image: String) -> URL? {
@@ -359,6 +360,10 @@ final class Store {
     }
 
     var totalBoxes: Int {
+        boxCount(in: images)
+    }
+
+    func boxCount(in images: [String]) -> Int {
         images.reduce(0) { $0 + boxes(for: $1).count }
     }
 

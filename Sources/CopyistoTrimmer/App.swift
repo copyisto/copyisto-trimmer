@@ -116,6 +116,8 @@ struct AppCommands: Commands {
                 // ⌥⌘T is the system's Show/Hide Toolbar.
                 .keyboardShortcut("t", modifiers: [.command, .control])
                 .disabled(store.notebooks.isEmpty)
+            Button("Tagi zgłoszenia") { store.describe(.submissionTags) }
+                .disabled(store.submission == nil)
             Divider()
             Button("Eksportuj") { Task { await store.export() } }
                 .keyboardShortcut("e")

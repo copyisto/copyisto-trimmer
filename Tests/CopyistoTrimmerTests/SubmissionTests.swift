@@ -5,12 +5,12 @@ import Testing
 
 // MARK: Recognising the folder
 
-@Test @MainActor func aSubmissionWithOneNotebookHasNoSections() throws {
+@Test @MainActor func aSubmissionIsTitledWithItsCode() throws {
     let root = try submission("M4K-V", notebooks: ["01": ["skan_001.png", "skan_002.png"]])
     let store = Store()
     store.open(root)
     #expect(store.submission?.code == "M4K-V" && store.isSubmissionRoot)
-    #expect(store.title == "M4K-V")
+    #expect(store.title == "Zgłoszenie: M4K-V")
     #expect(store.notebooks.map(\.name) == ["01"])
     #expect(store.images == ["01/skan_001.png", "01/skan_002.png"])
     #expect(store.strayFiles.isEmpty)
@@ -23,7 +23,7 @@ import Testing
     let store = Store()
     store.open(root)
     #expect(store.notebooks.map(\.name) == ["01", "02", "10", "nowy"])
-    #expect(store.notebooks.map(store.title(of:)) == ["M4K-V-01", "M4K-V-02", "M4K-V-10", "nowy: nowy zeszyt"])
+    #expect(store.notebooks.map(store.title(of:)) == ["M4K-V-01", "M4K-V-02", "M4K-V-10", "nowy (bez numeru)"])
     #expect(store.notebooks.map(store.number(of:)) == ["01", "02", "10", nil])
     // Files at the top belong to no notebook: listed, never shown as scans.
     #expect(store.strayFiles == ["zgubiony.png"])
@@ -35,11 +35,11 @@ import Testing
     let store = Store()
     store.open(root.appending(path: "01"))
     #expect(store.submission?.code == "M4K-V" && !store.isSubmissionRoot)
-    #expect(store.title == "M4K-V-01")
+    #expect(store.title == "Zeszyt: M4K-V-01")
     #expect(store.images == ["skan_001.png"])
     #expect(store.descriptionLevel(of: "skan_001.png") == ["notebooks", "01", "files", "skan_001.png"])
     store.open(root.appending(path: "nowy"))
-    #expect(store.title == "nowy: nowy zeszyt")
+    #expect(store.title == "Zeszyt: nowy (bez numeru)")
     #expect(store.descriptionLevel(of: "x.png") == nil)
 }
 
@@ -73,7 +73,7 @@ import Testing
     try writePNG(width: 8, height: 8, to: folder.appending(path: "a.png")) { _, _ in (0, 0, 0) }
     let store = Store()
     store.open(folder)
-    #expect(store.submission == nil && store.title == folder.lastPathComponent)
+    #expect(store.submission == nil && store.title == "Folder: \(folder.lastPathComponent)")
     #expect(store.images == ["a.png"] && store.notebooks.count == 1)
 }
 
@@ -116,7 +116,7 @@ import Testing
     }
 
     #expect(await store.export())
-    #expect(store.exportSummary?.notebooks == ["M4K-V-01", "nowy: nowy zeszyt"])
+    #expect(store.exportSummary?.notebooks == ["M4K-V-01", "nowy (bez numeru)"])
     for notebook in ["01", "nowy"] {
         let crops = try FileManager.default.contentsOfDirectory(atPath: TrimsLocation.crops(in: root.appending(path: notebook)).path)
         #expect(crops == ["skan_001_001.png"])
@@ -133,7 +133,7 @@ import Testing
     // A crop deleted by hand is cut again.
     try FileManager.default.removeItem(at: TrimsLocation.crops(in: root.appending(path: "nowy")).appending(path: "skan_001_001.png"))
     #expect(await store.export())
-    #expect(store.exportSummary?.notebooks == ["nowy: nowy zeszyt"])
+    #expect(store.exportSummary?.notebooks == ["nowy (bez numeru)"])
 }
 
 @Test @MainActor func aNotebookRenamedByPushKeepsTheSelection() async throws {
@@ -411,4 +411,20 @@ private func readJSON(_ url: URL) throws -> [String: Any] {
     #expect(store.inspectorTab == .crop)
     store.describe(.scanNote)
     #expect(store.inspectorTab == .scan && store.editing == .scanNote)
+}
+
+@Test @MainActor func theSubmissionAndANotebookTakeTheirOwnDevice() throws {
+    let root = try submission("M4K-V", notebooks: ["01": ["skan_001.png"], "02": ["skan_001.png"]])
+    let store = Store()
+    store.open(root)
+    store.setDescription(.deviceType, "scanner", at: Description.top)
+    store.setDescription(.device, "Epson DS-70000", at: Description.top)
+    store.setDescription(.dpi, 600, at: Description.top)
+    store.setDescription(.tags, ["harmonia"], at: Description.top)
+    store.setDescription(.dpi, 300, at: Description.notebook("02"))
+    let written = Description(json: try readJSON(root.appending(path: ".copyisto/description.json")))
+    #expect(written.source(at: Description.top) == Description.Source(deviceType: "scanner", device: "Epson DS-70000", dpi: 600))
+    #expect(Description.label(store.meta(of: "01/skan_001.png").source) == "skaner Epson DS-70000, 600 dpi")
+    #expect(Description.label(store.meta(of: "02/skan_001.png").source) == "skaner Epson DS-70000, 300 dpi")
+    #expect(store.meta(of: "02/skan_001.png").tags == ["harmonia"])
 }

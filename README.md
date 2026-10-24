@@ -24,7 +24,7 @@ Requires macOS 26, on Apple silicon or Intel.
 1. Open a submission's folder (⌘O) or drop it onto the window; a single notebook or any folder of scans works too.
 2. If a page is tilted, press **Wyprostuj automatycznie** (⌘L), or turn it by 0.1° with `[` and `]`.
 3. Drag on a page to draw a box; drag a box to move it, or its handles to resize it.
-4. Describe crops in the panel on the right (⌥⌘I), one level per tab: **Wycinek** for the selected box (⌘T, ⌘U), **Skan RAW** for its scan (⇧⌘T, ⇧⌘U) and **Zeszyt** for its notebook (⌃⌘T).
+4. Describe crops in the panel on the right (⌥⌘I), one level per tab: **Wycinek** for the selected box (⌘T, ⌘U), **Skan RAW** for its scan (⇧⌘T, ⇧⌘U), **Zeszyt** for its notebook (⌃⌘T) and, in a submission, **Zgłoszenie** for all of it.
 5. Press **Eksportuj** (⌘E).
 
 Each notebook keeps the trimmer's work in its own hidden folder, `.trims/`: the boxes in `trims.json` and the crops in `crops/`, named `<page>_001.png`, `<page>_002.png`, …, at the scan's full resolution.
@@ -58,7 +58,8 @@ M4K-V/
   nowy/                 a new notebook; copyisto push gives it a number and renames the folder
 ```
 
-The window is titled with the submission's code, and the list has a foldable section per notebook, in the order of their numbers, with new ones last.
+The window says what is open, **Zgłoszenie: M4K-V**, **Zeszyt: M4K-V-01** or **Folder: skany**, and its subtitle says when a folder is no submission.
+The list has a foldable section per notebook, headed **Zeszyt: M4K-V-01** with its scans and crops counted, in the order of their numbers, with new ones last.
 Files at the top of the submission belong to no notebook, so the list names them once instead of showing them as scans.
 A notebook folder opened on its own is that one notebook, titled with its ID, such as M4K-V-01.
 The app looks for `.copyisto/state.json` in the opened folder and its parent only, and reads nothing from it but the code.
@@ -73,10 +74,11 @@ Each tab edits only its own level, and shows below what it inherits from the lev
 A box's number on the page gets an icon when the box has its own tags or note, and turns into a warning when its crop would have more than 20 tags, which the CLI refuses.
 A crop's note is the scan's note and the box note, one per line, within 2000 characters, counted under each note.
 
-In a submission's numbered notebook, **Skan RAW** and **Zeszyt** write the shared description, `.copyisto/description.json`, as `copyisto describe` does, so they describe the file in the notebook's RAW as well as every crop from it:
+In a submission, **Zgłoszenie**, and in a numbered notebook **Skan RAW** and **Zeszyt**, write the shared description, `.copyisto/description.json`, as `copyisto describe` does, so they describe the files in the notebook's RAW as well as every crop from them:
 
-- **Skan RAW**: what the scan was taken with (device type, model, dpi), its tags and its note.
-- **Zeszyt**: the notebook's tags and its note, which is about the notebook and goes to no crop, and, greyed, what is set for the whole submission with `copyisto describe`.
+- **Zgłoszenie**: what every notebook's scans were taken with (device type, model, dpi) and their tags.
+- **Zeszyt**: the device, overriding the submission's, the notebook's tags, and its note, which is about the notebook and goes to no crop.
+- **Skan RAW**: the device, overriding the notebook's, the scan's tags and its note.
 
 Elsewhere, in a plain folder or a notebook that has no number until `copyisto push` gives it one, the scan's and the notebook's tags and the scan's note go to the trimmer's file.
 Tags and a note the trimmer's file already has for a scan or a notebook stay in the same list, so nothing is described twice; a new tag goes to the description.
